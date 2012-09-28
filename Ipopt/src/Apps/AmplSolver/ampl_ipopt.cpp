@@ -43,7 +43,7 @@ SmartPtr<Matrix> getSensitivityMatrix(SmartPtr<IpoptApplication> app);
 SmartPtr<Vector> getDirectionalDerivative(SmartPtr<IpoptApplication> app,
 					  SmartPtr<Matrix> sens_matrix);
 
-bool doIntervallization(SmartPtr<IpoptApplication> app, SmartPtr<AmplSuffixHandler> suffix_handler,
+bool doIntervalization(SmartPtr<IpoptApplication> app, SmartPtr<AmplSuffixHandler> suffix_handler,
 			SmartPtr<ParaTNLP> ampl_tnlp);
 
 int main(int argc, char**args)
@@ -121,7 +121,7 @@ int main(int argc, char**args)
     delta_s->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "delta_s");
   }
 */
-  doIntervallization(app, suffix_handler,ampl_tnlp);
+  doIntervalization(app, suffix_handler,ampl_tnlp);
 
   return 0;
 }
@@ -218,7 +218,7 @@ SmartPtr<Vector> getDirectionalDerivative(SmartPtr<IpoptApplication> app, SmartP
 }
 
 
-bool doIntervallization(SmartPtr<IpoptApplication> app, SmartPtr<AmplSuffixHandler> suffix_handler,  SmartPtr<ParaTNLP> ampl_tnlp)
+bool doIntervalization(SmartPtr<IpoptApplication> app, SmartPtr<AmplSuffixHandler> suffix_handler,  SmartPtr<ParaTNLP> ampl_tnlp)
 {
 
   SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
@@ -312,12 +312,12 @@ for (int i=0;i<nrows;i++){
 
   // ParameterSet is to contain all parameter/interval information
   // this would prefer to be a list
-  std::vector<IntervallInfo> ParameterSets;
+  std::vector<IntervalInfo> ParameterSets;
 
   Number tmp_par = 0;
   Number tmp_ID = 0;
   bool tmp_upper = 0;
-  IntervallInfo IntInfo;
+  IntervalInfo IntInfo;
 
   // search for parameterentries completing one set of parameters
   for (int j =0; j< i_p; j++) {
@@ -328,9 +328,9 @@ for (int i=0;i<nrows;i++){
 	if (tmp_par == parameterflags[k] && tmp_ID == intervalflags[k]) {
 	  // add set to list of parametersets
 	  tmp_upper = (par_values[j]>par_values[k]);
-	  IntInfo = IntervallInfo(tmp_par,tmp_ID,j,tmp_upper );
+	  IntInfo = IntervalInfo(tmp_par,tmp_ID,j,tmp_upper );
 	  ParameterSets.push_back(IntInfo);
-	  IntInfo = IntervallInfo(tmp_par,tmp_ID,k,!tmp_upper );
+	  IntInfo = IntervalInfo(tmp_par,tmp_ID,k,!tmp_upper );
 	  ParameterSets.push_back(IntInfo);
 	  k = i_p;
 	}

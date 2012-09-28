@@ -2033,9 +2033,9 @@ namespace Ipopt
   void IntervalInfo::AddParameter(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
   {  }
 
-  void IntervalInfo::GetIndex(Index &pindex)
+  void IntervalInfo::GetIndex(Index &index)
   {
-    pindex = index_;
+    index = index_;
   }
 
   void IntervalInfo::GetIntervalID(Index &nint)
@@ -2064,40 +2064,54 @@ namespace Ipopt
 
   IntervalInfoSet::IntervalInfoSet() {}
 
-  IntervalInfoSet::IntervalInfoSet(const Index parameterID, const Index intervalID, const Index vector_index, const bool is_upper)
+  IntervalInfoSet::IntervalInfoSet(std::vector<IntervalInfo> intinfovec)
   {
 
-    parameterID_ = parameterID;
-    intervalID_ = intervalID;
-    index_ = vector_index;
-    is_upper_ = is_upper;
+    std::vector<IntervalInfo> intinfovec_ = intinfovec;
 
+    std::vector<Index> indexvec_(intinfovec_.size());
+    std::vector<Index> parameterIDvec_(intinfovec_.size());
+    std::vector<Index> intervalIDvec_(intinfovec_.size());
+    std::vector<bool> is_uppervec_(intinfovec_.size());
+
+    for (int i=0; i<intinfovec_.size(); i++) {
+      intinfovec_[i].GetIndex(indexvec_[i]);
+      intinfovec_[i].GetParameterID(parameterIDvec_[i]);
+      intinfovec_[i].GetIntervalID(intervalIDvec_[i]);
+      is_uppervec_[i] = intinfovec_[i].IsUpper();
+    }
   }
 
-  IntervalInfoSet:: ~IntervalInfoSet() {}
+  IntervalInfoSet::~IntervalInfoSet() {}
 
-  void IntervalInfoSet::SetParameters(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
-  {  }
-
-  void IntervalInfoSet::AddParameter(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
-  {  }
-
-  void IntervalInfoSet::GetIndex(Index &pindex)
+  void IntervalInfoSet::SetIntInfoSet(std::vector<IntervalInfo> intinfovec)
   {
-    pindex = index_;
+    intinfovec_=intinfovec;
   }
 
-  void IntervalInfoSet::GetIntervalID(Index &nint)
+  void IntervalInfoSet::GetIntInfoSet(std::vector<IntervalInfo> &intinfovec)
   {
-    nint = intervalID_;
+    intinfovec=intinfovec_;
   }
 
-  void IntervalInfoSet::GetParameterID(Index &paraID)
+  void IntervalInfoSet::GetIndexVec(std::vector<Index> &indexvec)
   {
-    paraID = parameterID_;
+    indexvec=indexvec_;
   }
 
-  void IntervalInfoSet::SetIntervals(const Index nint)
-  {  }
+  void IntervalInfoSet::GetIntervalIDVec(std::vector<Index> &intervalIDvec)
+  {
+    intervalIDvec = intervalIDvec_;
+  }
+
+  void IntervalInfoSet::GetParameterIDVec(std::vector<Index> &parameterIDvec)
+  {
+    parameterIDvec_ = parameterIDvec_;
+  }
+
+  void IntervalInfoSet::IsUpperVec(std::vector<bool> &is_uppervec)
+  {
+    is_uppervec=is_uppervec_;
+  }
 
 } // namespace Ipopt

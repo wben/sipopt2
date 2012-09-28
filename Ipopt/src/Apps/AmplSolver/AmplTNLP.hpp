@@ -636,7 +636,7 @@ namespace Ipopt
     ~IntervalInfo();
     void SetParameters(const std::vector<std::string> pnames, const std::vector<Number> pvalues);
     void AddParameter(const std::vector<std::string> pnames, const std::vector<Number> pvalues);
-    void GetIndex(Index &pindex);
+    void GetIndex(Index &index);
     void GetIntervalID (Index &nint);
     void GetParameterID (Index &paraID);
     bool IsUpper();
@@ -659,10 +659,10 @@ namespace Ipopt
     ~IntervalInfoSet();
     void SetIntInfoSet(std::vector<IntervalInfo> intinfovec);
     void GetIntInfoSet(std::vector<IntervalInfo> &intinfovec);
-    void GetIndex(std::vector<Index> &pindexvec);
-    void GetIntervalID (std::vector<Index> &nintvec);
-    void GetParameterID (std::vector<Index> &paraIDvec);
-    void IsUpper(std::vector<bool> &is_uppervec)
+    void GetIndexVec(std::vector<Index> &indexvec);
+    void GetIntervalIDVec (std::vector<Index> &nintvec);
+    void GetParameterIDVec (std::vector<Index> &paraIDvec);
+    void IsUpperVec(std::vector<bool> &is_uppervec);
 
   private:
     std::vector<IntervalInfo> intinfovec_;
