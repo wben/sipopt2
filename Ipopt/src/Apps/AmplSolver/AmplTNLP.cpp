@@ -2013,13 +2013,9 @@ namespace Ipopt
     return ret;
   }
 
-  //////////////////////////////////////////////////////////////////////////////////
-  ////////////// setup of a storage for intervallization data //////////////////////
-  //////////////////////////////////////////////////////////////////////////////////
+  IntervalInfo::IntervalInfo() {}
 
-  IntervallInfo::IntervallInfo() {}
-
-  IntervallInfo::IntervallInfo(const Index parameterID, const Index intervalID, const Index vector_index, const bool is_upper)
+  IntervalInfo::IntervalInfo(const Index parameterID, const Index intervalID, const Index vector_index, const bool is_upper)
   {
 
     parameterID_ = parameterID;
@@ -2029,45 +2025,79 @@ namespace Ipopt
 
   }
 
-  IntervallInfo:: ~IntervallInfo() {}
+  IntervalInfo:: ~IntervalInfo() {}
 
-  void IntervallInfo::SetParameters(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
-  {
+  void IntervalInfo::SetParameters(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
+  {  }
 
+  void IntervalInfo::AddParameter(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
+  {  }
 
-  }
-
-  void IntervallInfo::AddParameter(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
-  {
-
-
-  }
-
-  void IntervallInfo::GetIndex(Index &pindex)
+  void IntervalInfo::GetIndex(Index &pindex)
   {
     pindex = index_;
   }
 
-  void IntervallInfo::GetIntervalID(Index &nint)
+  void IntervalInfo::GetIntervalID(Index &nint)
   {
     nint = intervalID_;
   }
 
-  void IntervallInfo::GetParameterID(Index &paraID)
+  void IntervalInfo::GetParameterID(Index &paraID)
   {
     paraID = parameterID_;
   }
 
-  void IntervallInfo::SetIntervals(const Index nint)
+  bool IntervalInfo::IsUpper()
   {
-
+    return is_upper_;
   }
 
-  void IntervallInfo::PrintSet()
+  void IntervalInfo::SetIntervals(const Index nint)
+  {  }
+
+  void IntervalInfo::PrintSet()
   {
     printf("\n %d %d %d %d \n", parameterID_, intervalID_, index_, is_upper_);
   }
 
-  //////////////////////////END OF INTERVALL PART///////////////////////////////////
+
+  IntervalInfoSet::IntervalInfoSet() {}
+
+  IntervalInfoSet::IntervalInfoSet(const Index parameterID, const Index intervalID, const Index vector_index, const bool is_upper)
+  {
+
+    parameterID_ = parameterID;
+    intervalID_ = intervalID;
+    index_ = vector_index;
+    is_upper_ = is_upper;
+
+  }
+
+  IntervalInfoSet:: ~IntervalInfoSet() {}
+
+  void IntervalInfoSet::SetParameters(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
+  {  }
+
+  void IntervalInfoSet::AddParameter(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
+  {  }
+
+  void IntervalInfoSet::GetIndex(Index &pindex)
+  {
+    pindex = index_;
+  }
+
+  void IntervalInfoSet::GetIntervalID(Index &nint)
+  {
+    nint = intervalID_;
+  }
+
+  void IntervalInfoSet::GetParameterID(Index &paraID)
+  {
+    paraID = parameterID_;
+  }
+
+  void IntervalInfoSet::SetIntervals(const Index nint)
+  {  }
 
 } // namespace Ipopt

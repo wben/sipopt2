@@ -231,7 +231,7 @@ bool doIntervallization(SmartPtr<IpoptApplication> app, SmartPtr<AmplSuffixHandl
 
   const Index nrows = mv_sens->NRows();
   const Index ncols = mv_sens->NCols();
-  printf("\n\nDie Matrix mv_sens hat %d Reihen und %d Spalten.",nrows, ncols);
+  //  printf("\n\nDie Matrix mv_sens hat %d Reihen und %d Spalten.",nrows, ncols);
 
 
   std::vector<Index> tagged_cols;
@@ -240,7 +240,7 @@ bool doIntervallization(SmartPtr<IpoptApplication> app, SmartPtr<AmplSuffixHandl
   std::vector<Number> tmp_val;
   // decision variable to determine branching criterion:
   // 1 is strictly greater than, 2 is strictly smaller than, 0 is absolute value str.ly greater than
-  Index branchmode =1;
+  Index branchmode =2;
   // if s_space is only needed for this one MetaData evaluation, it need not be initialized and used anyway (single large dynamic_cast should do)
   SmartPtr<const DenseVectorSpace> s_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(mv_sens->ColVectorSpace()));
   const std::vector<Index> var_int_flags = s_space->GetIntegerMetaData("intervalID");
@@ -276,25 +276,20 @@ for (int i=0;i<nrows;i++){
 	 //printf("\ntmp_val Neuzuweisung (%f) aus Spalte %d.\n",tmp_val.at(j),i);
 	 tagged_cols.at(j) = i;
        }
-       else if (abs(s_values[ctrl_rows.at(j)])>abs(tmp_val.at(j)) && branchmode == 0){
+       else if (abs(s_values[ctrl_rows.at(j)])>abs(tmp_val.at(j)) && branchmode==0){
 	 tmp_val.at(j) = abs(s_values[ctrl_rows.at(j)]);
 	 //printf("\ntmp_val Neuzuweisung (%f) aus Spalte %d.\n",tmp_val.at(j),i);
 	 tagged_cols.at(j) = i;
        }
      }
-
    }
  }
- printf("\n\nEs wurde Spalte %d gespeichert.\n\n",tagged_cols[0]);
-
-
-
 
   SmartPtr<const IteratesVector> curr = app->IpoptDataObject()->curr();
   SmartPtr<IpoptNLP> ipopt_nlp = app->IpoptNLPObject();
   SmartPtr<OrigIpoptNLP> orig_nlp = dynamic_cast<OrigIpoptNLP*>(GetRawPtr(ipopt_nlp));
 
-  // trying to determine parameter positions and intervalIDs in the NLP object
+
   SmartPtr<const DenseVector> p = dynamic_cast<const DenseVector*>(GetRawPtr(orig_nlp->p()));
   SmartPtr<const DenseVectorSpace> p_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(p->OwnerSpace()));
 
@@ -302,6 +297,8 @@ for (int i=0;i<nrows;i++){
   const std::vector<std::string> parnames = p_space->GetStringMetaData("idx_names");
   const std::vector<Index> intervalflags = p_space->GetIntegerMetaData("intervalID");
   const std::vector<Index> parameterflags = p_space->GetIntegerMetaData("parameter");
+
+  printf("\n\n intervalflag: %d parameterflag: %d  \n\n", intervalflags[tagged_cols[0]], parameterflags[tagged_cols[0]]);
 
   const Index i_p = p_space->Dim();
   std::vector<std::string> par_names_tmp;
@@ -345,13 +342,18 @@ for (int i=0;i<nrows;i++){
   std::vector<Index> crit_int(tagged_cols.size());
   std::vector<Index> crit_par(tagged_cols.size());
 
-  for (int i=0; i<ParameterSets.size();i++) {
-    for (int j=0; j<tagged_cols.size();j++) {
+  for (int j=0; j<tagged_cols.size();j++) {
+    for (int i=0; i<ParameterSets.size();i++) {
       ParameterSets[i].GetIndex(tmp_idx);
+      printf("\n\n aktuell untersuchter Index ist: %d\n\n",tmp_idx);
       if (tmp_idx == tagged_cols[j]){
+	printf("\n\ncrit_int erst: %d\n\n",crit_int[j]);
 	ParameterSets[i].GetIntervalID(crit_int[j]);
+	printf("\n\ncrit_int dann:: %d\n\n",crit_int[j]);
+	printf("\n\ncrit_par erst: %d\n\n",crit_par[j]);
 	ParameterSets[i].GetParameterID(crit_par[j]);
-	j=tagged_cols.size();
+	printf("\n\ncrit_par dann: %d\n\n",crit_par[j]);
+	i=ParameterSets.size();
       }
     }
   }
@@ -367,7 +369,7 @@ for (int i=0;i<nrows;i++){
     branch_intervals << buffer;
   }
   branch_intervals << "\n\n#end of file";
-    branch_intervals.close();
+  branch_intervals.close();
 
   return 1;
 }

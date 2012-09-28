@@ -628,21 +628,18 @@ namespace Ipopt
     NumericMetaDataMapType con_numeric_md_;
   };
 
-  //////////////////////////////////////////////////////////////////////////////////
-  ////////bewa01 setup of a storage for intervallization data //////////////////////
-  //////////////////////////////////////////////////////////////////////////////////
-
-  class IntervallInfo : public ReferencedObject
+  class IntervalInfo : public ReferencedObject
   {
   public:
-    IntervallInfo();
-    IntervallInfo(const Index parameterID, const Index intervalID, const Index vector_index, const bool is_upper);
-    ~IntervallInfo();
+    IntervalInfo();
+    IntervalInfo(const Index parameterID, const Index intervalID, const Index vector_index, const bool is_upper);
+    ~IntervalInfo();
     void SetParameters(const std::vector<std::string> pnames, const std::vector<Number> pvalues);
     void AddParameter(const std::vector<std::string> pnames, const std::vector<Number> pvalues);
     void GetIndex(Index &pindex);
     void GetIntervalID (Index &nint);
     void GetParameterID (Index &paraID);
+    bool IsUpper();
     void SetIntervals(const Index nint);
     void PrintSet();
 
@@ -653,8 +650,27 @@ namespace Ipopt
     bool is_upper_;
 
   };
-  //////////////////////////END OF INTERVALL PART///////////////////////////////////
 
+  class IntervalInfoSet : public ReferencedObject
+  {
+  public:
+    IntervalInfoSet();
+    IntervalInfoSet(std::vector<IntervalInfo> intinfovec);
+    ~IntervalInfoSet();
+    void SetIntInfoSet(std::vector<IntervalInfo> intinfovec);
+    void GetIntInfoSet(std::vector<IntervalInfo> &intinfovec);
+    void GetIndex(std::vector<Index> &pindexvec);
+    void GetIntervalID (std::vector<Index> &nintvec);
+    void GetParameterID (std::vector<Index> &paraIDvec);
+    void IsUpper(std::vector<bool> &is_uppervec)
+
+  private:
+    std::vector<IntervalInfo> intinfovec_;
+    std::vector<Index> indexvec_;
+    std::vector<Index> parameterIDvec_;
+    std::vector<Index> intervalIDvec_;
+    std::vector<bool> is_uppervec_;
+  };
 
 } // namespace Ipopt
 
