@@ -2058,28 +2058,41 @@ namespace Ipopt
 
   void IntervalInfo::PrintSet()
   {
-    printf("\n %d %d %d %d \n", parameterID_, intervalID_, index_, is_upper_);
+    printf("\n parameterID: %d, intervalID: %d, index: %d, is_upper: %d \n", parameterID_, intervalID_, index_, is_upper_);
   }
 
 
-  IntervalInfoSet::IntervalInfoSet() {}
+  IntervalInfoSet::IntervalInfoSet() { }
 
   IntervalInfoSet::IntervalInfoSet(std::vector<IntervalInfo> intinfovec)
   {
+    intinfovec_.clear();
+    indexvec_.clear();
+    parameterIDvec_.clear();
+    intervalIDvec_.clear();
+    is_uppervec_.clear();
+    Index tmp_index;
+    Index tmp_paraID;
+    Index tmp_intID;
+    int i=0;
 
-    std::vector<IntervalInfo> intinfovec_ = intinfovec;
-
-    std::vector<Index> indexvec_(intinfovec_.size());
-    std::vector<Index> parameterIDvec_(intinfovec_.size());
-    std::vector<Index> intervalIDvec_(intinfovec_.size());
-    std::vector<bool> is_uppervec_(intinfovec_.size());
-
-    for (int i=0; i<intinfovec_.size(); i++) {
-      intinfovec_[i].GetIndex(indexvec_[i]);
-      intinfovec_[i].GetParameterID(parameterIDvec_[i]);
-      intinfovec_[i].GetIntervalID(intervalIDvec_[i]);
-      is_uppervec_[i] = intinfovec_[i].IsUpper();
+    // sort algorithm to make sure entry indexing in IntervalInfoSet matches given indexing
+    while (intinfovec_.size()<intinfovec.size()) {
+      intinfovec[i].GetIndex(tmp_index);
+      if (tmp_index==indexvec_.size()) {
+	intinfovec_.push_back(intinfovec[i]);
+	indexvec_.push_back(tmp_index);
+	intinfovec[i].GetParameterID(tmp_paraID);
+	parameterIDvec_.push_back(tmp_paraID);
+	intinfovec[i].GetIntervalID(tmp_intID);
+	intervalIDvec_.push_back(tmp_intID);
+	is_uppervec_.push_back(intinfovec[i].IsUpper());
+      }
+      i++;
+      if (i==intinfovec.size())
+	i=0;
     }
+
   }
 
   IntervalInfoSet::~IntervalInfoSet() {}
@@ -2099,9 +2112,29 @@ namespace Ipopt
     indexvec=indexvec_;
   }
 
+  void IntervalInfoSet::GetIndex(Index intindex, Index &index)
+  {
+    if (intindex<indexvec_.size())
+      index = indexvec_[intindex];
+    else {
+      index = -1;
+      printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::GetIndex() call with out of range index!\n");
+    }
+  }
+
   void IntervalInfoSet::GetIntervalIDVec(std::vector<Index> &intervalIDvec)
   {
     intervalIDvec = intervalIDvec_;
+  }
+
+  void IntervalInfoSet::GetIntervalID(Index intindex, Index &intervalID)
+  {
+    if (intindex<intervalIDvec_.size())
+      intervalID = intervalIDvec_[intindex];
+    else {
+      intervalID = -1;
+      printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::GetIntervalID() call with out of range index!\n");
+    }
   }
 
   void IntervalInfoSet::GetParameterIDVec(std::vector<Index> &parameterIDvec)
@@ -2109,9 +2142,53 @@ namespace Ipopt
     parameterIDvec_ = parameterIDvec_;
   }
 
+  void IntervalInfoSet::GetParameterID(Index paraindex, Index &parameterID)
+  {
+    if (paraindex<parameterIDvec_.size())
+      parameterID = parameterIDvec_[paraindex];
+    else {
+      parameterID = -1;
+      printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::GetParameterID() call with out of range index!\n");
+    }
+  }
+
   void IntervalInfoSet::IsUpperVec(std::vector<bool> &is_uppervec)
   {
     is_uppervec=is_uppervec_;
+  }
+
+  bool IntervalInfoSet::IsUpper(Index isupperindex)
+  {
+    if (isupperindex<is_uppervec_.size())
+      return is_uppervec_[isupperindex];
+    else {
+     printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::IsUpper() call with out of range index!\n");
+     printf("\nsize of is_uppervec_: %d \n", is_uppervec_.size());
+     return 0;
+    }
+  }
+  void IntervalInfoSet::GetOtherBndIdx(Index boundindex,Index &otherbndidx)
+  {
+    for (int i=0;i<intinfovec_.size();i++){
+      if (parameterIDvec_[int(boundindex)]==parameterIDvec_[i] && intervalIDvec_[int(boundindex)]==intervalIDvec_[i] && is_uppervec_[int(boundindex)]!=is_uppervec_[i]){
+	otherbndidx = indexvec_[i];
+	i=intinfovec_.size();
+      }
+    }
+  }
+
+  void IntervalInfoSet::PrintSet()
+  {
+    for (int i=0; i<intinfovec_.size();i++){
+      printf("\n\nIntervallInfoSet Eintrag %d:\n", i);
+      intinfovec_[i].PrintSet();
+      printf("\n");
+    }
+  }
+
+  Index IntervalInfoSet::Size()
+  {
+    return intinfovec_.size();
   }
 
 } // namespace Ipopt

@@ -654,18 +654,27 @@ namespace Ipopt
   class IntervalInfoSet : public ReferencedObject
   {
   public:
-    IntervalInfoSet();
+
     IntervalInfoSet(std::vector<IntervalInfo> intinfovec);
     ~IntervalInfoSet();
     void SetIntInfoSet(std::vector<IntervalInfo> intinfovec);
     void GetIntInfoSet(std::vector<IntervalInfo> &intinfovec);
     void GetIndexVec(std::vector<Index> &indexvec);
+    void GetIndex(Index intindex, Index &index);
     void GetIntervalIDVec (std::vector<Index> &nintvec);
-    void GetParameterIDVec (std::vector<Index> &paraIDvec);
+    void GetIntervalID(Index intindex, Index &intervalID);
+    void GetParameterIDVec (std::vector<Index> &parameterIDvec);
+    void GetParameterID(Index paraindex, Index &parameterID);
     void IsUpperVec(std::vector<bool> &is_uppervec);
+    bool IsUpper(Index isupperindex);
+    void GetOtherBndIdx(Index boundindex,Index &otherbndidx);
+    void PrintSet();
+    Index Size();
 
   private:
+    IntervalInfoSet();
     std::vector<IntervalInfo> intinfovec_;
+    // note: at the moment, indexvec_ is obsolete, since the given vector indexes HAVE to range from 0 to # of intervalentries. if the constructor is changed towards acceptance of other indexsystems, indexvec_ turns useful again
     std::vector<Index> indexvec_;
     std::vector<Index> parameterIDvec_;
     std::vector<Index> intervalIDvec_;
