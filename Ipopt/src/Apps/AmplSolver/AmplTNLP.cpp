@@ -17,11 +17,6 @@
 #include "IpSymTMatrix.hpp"
 #include "IpBlas.hpp"
 
-/* //bewa01 giving his best
-   #ifdef HAVE_LIST_H
-   #  include <list.h>
-   #else
-   #  error "don't have header file for list" */
 #ifdef HAVE_CSTRING
 # include <cstring>
 #else
@@ -601,6 +596,34 @@ namespace Ipopt
       }
       para_integer_md_["parameter"] = parameter_vec;
       }
+
+    const Index* branchmode = suffix_handler_->GetIntegerSuffixValues("branchmode", AmplSuffixHandler::Variable_Source);
+    if (np>0 && branchmode) {
+      std::vector<int> branchmode_vec(np);
+      for (int k=0; k<np; ++k) {
+        branchmode_vec[k] = branchmode[para_x_[k]];
+      }
+      para_integer_md_["branchmode"] = branchmode_vec;
+      }
+
+    const Index* scaling = suffix_handler_->GetIntegerSuffixValues("scaling", AmplSuffixHandler::Variable_Source);
+    if (np>0 && scaling) {
+      std::vector<int> scaling_vec(np);
+      for (int k=0; k<np; ++k) {
+        scaling_vec[k] = scaling[para_x_[k]];
+      }
+      para_integer_md_["scaling"] = scaling_vec;
+      }
+
+    const Index* benefit_value = suffix_handler_->GetIntegerSuffixValues("benefit_value", AmplSuffixHandler::Variable_Source);
+    if (np>0 && benefit_value) {
+      std::vector<int> benefit_value_vec(np);
+      for (int k=0; k<np; ++k) {
+        benefit_value_vec[k] = benefit_value[para_x_[k]];
+      }
+      para_integer_md_["benefit_value"] = benefit_value_vec;
+      }
+
 
     if (var_string_md_.size() > 0 || var_integer_md_.size() > 0 || var_numeric_md_.size() > 0
         || para_string_md_.size() > 0 || para_integer_md_.size() > 0 || para_numeric_md_.size() > 0
@@ -2175,6 +2198,30 @@ namespace Ipopt
 	i=intinfovec_.size();
       }
     }
+  }
+
+  void IntervalInfoSet::GetParameterCount(Index &paracount)
+  {
+    Index tmp_count =0;
+    for (int i=0;i<parameterIDvec_.size();i++) {
+      if (i==0)
+	tmp_count = parameterIDvec_[i];
+      if (parameterIDvec_[i]>tmp_count)
+	tmp_count = parameterIDvec_[i];
+    }
+    paracount = tmp_count;
+  }
+
+  void IntervalInfoSet::GetIntervalCount(Index &intervalcount)
+  {
+    Index tmp_count= 0;
+    for (int i=0;i<intervalIDvec_.size();i++) {
+      if (i==0)
+	tmp_count = intervalIDvec_[i];
+      if (intervalIDvec_[i]>tmp_count)
+	tmp_count = intervalIDvec_[i];
+    }
+    intervalcount = tmp_count;
   }
 
   void IntervalInfoSet::PrintSet()

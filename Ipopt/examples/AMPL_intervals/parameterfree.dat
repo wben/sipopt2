@@ -12,7 +12,7 @@ param  a:        1                  2                  3 :=         #
 
 # mathematical model parameters
 
-let nfe       := 40          ;
+let nfe       := 20          ;
 let ncp       := 3            ;
 let r1 := 0.15505102572168    ;
 let r2 := 0.64494897427832    ;

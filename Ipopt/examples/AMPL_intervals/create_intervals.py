@@ -52,6 +52,10 @@ class Interval:
 
 class AmplSet:
     """an ampl setup: ampl srcipt and feasible set of intervals"""
+    branchmode = 2
+    scaling = 1
+    benefits = 1
+
     def __init__(self, ampl_script, pLnames, pUnames, pLvalues, pUvalues):
         self.ampl_script = ampl_script
         self.pLnames = pLnames
@@ -74,6 +78,10 @@ class AmplSet:
 
         for k, iv in enumerate(self.intervals):
             for nameL, pL, nameU, pU in zip(self.pLnames, iv.pL, self.pUnames, iv.pU):
+                if k == 0:
+                    f.write('let {}[{}].branchmode := {};\n'.format(nameL,k+1,self.branchmode))
+                    f.write('let {}[{}].scaling := {};\n'.format(nameL,k+1,self.scaling))
+                    f.write('let {}[{}].benefit_value := {};\n'.format(nameL,k+1,self.benefits))
                 f.write('let {}[{}] := {};\n'.format(nameL, k+1, pL))
                 f.write('let {}[{}] := {};\n'.format(nameU, k+1, pU))
         f.write('\n\n#end of file');
@@ -83,7 +91,7 @@ class AmplSet:
         """"
         one run of ampl
 
-        write inc file and run ampl with the specified setup
+        write inc file and run ampl/ipopt with the specified setup
         """
         self.write_include_file()
         try:
@@ -111,7 +119,8 @@ class AmplSet:
     def branch_controlwise(self,nruns):
         """read control sensitivity data and split specified interval """
         for ir in range(nruns):
-            output_f = open('output'+str(ir)+'.txt', 'w')
+            # common output tags: bmX with X as branchmode setting, s0/1 for no/scaling, bv0/1 for no/benfit value usage
+            output_f = open('op_bm'+str(self.branchmode)+'_s'+str(self.scaling)+'_bv'+str(self.benefits)+'_'+str(ir)+'.txt', 'w')
             self.call_ampl(output_file_handle=output_f)
             output_f.close()
             branch_file_handle = 'branch_intervals.dat'
@@ -161,7 +170,7 @@ def run():
     pUvalues = [1.1, 1.2]
     info = AmplSet(ampl_script, pLnames, pUnames, pLvalues, pUvalues)
     #info.randomize(2)
-    info.branch_controlwise(3)
+    info.branch_controlwise(10)
 
 if __name__=='__main__':
     run()

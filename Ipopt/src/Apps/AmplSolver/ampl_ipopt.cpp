@@ -97,7 +97,10 @@ int main(int argc, char**args)
   suffix_handler->AddAvailableSuffix("perturbed", AmplSuffixHandler::Variable_Source, AmplSuffixHandler::Number_Type);
   // Add the suffix for intervall-organization
   suffix_handler->AddAvailableSuffix("intervalID", AmplSuffixHandler::Variable_Source, AmplSuffixHandler::Index_Type);
-  // Add the suffix for include-order organization
+  // Add the suffixes for branching criterion, scaling, and benefit valueing
+  suffix_handler->AddAvailableSuffix("branchmode", AmplSuffixHandler::Variable_Source, AmplSuffixHandler::Index_Type);
+  suffix_handler->AddAvailableSuffix("scaling", AmplSuffixHandler::Variable_Source, AmplSuffixHandler::Index_Type);
+  suffix_handler->AddAvailableSuffix("benefit_value", AmplSuffixHandler::Variable_Source, AmplSuffixHandler::Index_Type);
 
   SmartPtr<ParaTNLP> ampl_tnlp = new AmplTNLP(ConstPtr(app->Jnlst()),
 					      app->Options(),
@@ -182,7 +185,7 @@ SmartPtr<Matrix> getSensitivityMatrix(SmartPtr<IpoptApplication> app)
     mv->SetVector(k, *lhs->x());
   }
   delete[] dp_values;
-  mv->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "dxdp");
+  //  mv->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "dxdp");
   SmartPtr<Matrix> retval(GetRawPtr(mv));
   return retval;
 }
@@ -226,7 +229,7 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
   SmartPtr<Vector> delta_s = getDirectionalDerivative(app, sens_matrix);
   if (IsValid(delta_s)) {
-    delta_s->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "delta_s");
+    //    delta_s->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "delta_s");
   }
 
   SmartPtr<MultiVectorMatrix> mv_sens = dynamic_cast<MultiVectorMatrix*>(GetRawPtr(sens_matrix));
@@ -238,24 +241,31 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   std::vector<Index> ctrl_rows;
   Number tmp_bv=0;
 
-  // decision variable to determine branching criterion:
-  // 1 is strictly greater than, 2 is strictly smaller than, 0 is absolute value str.ly greater than
-  Index branchmode =0;
-
-  // decision variable to enable or disable sensitivity scaling - scaling branching criterion by interval width
-  bool do_scale_bc = true;
-
-  // decision variable to enable benefit value branch decision instead of simple sensitivity based decision
-  // benefit value is the (scalar) product of sensitivities of both boundaries of an interval
-  bool do_determine_bv = true;
-
   SmartPtr<IpoptNLP> ipopt_nlp = app->IpoptNLPObject();
   SmartPtr<OrigIpoptNLP> orig_nlp = dynamic_cast<OrigIpoptNLP*>(GetRawPtr(ipopt_nlp));
 
   SmartPtr<const DenseVector> p = dynamic_cast<const DenseVector*>(GetRawPtr(orig_nlp->p()));
   SmartPtr<const DenseVectorSpace> p_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(p->OwnerSpace()));
 
-  // get parameter names
+  // decision variable to determine branching criterion:
+  // 1 is strictly greater than, 2 is strictly smaller than, 0 is absolute value str.ly greater than
+  Index branchmode = p_space->GetIntegerMetaData("branchmode")[0];
+  printf("\nbranchmode is %d \n", branchmode);
+
+  // decision variable to enable or disable sensitivity scaling - scaling branching criterion by interval width
+  bool do_scale_bc = p_space->GetIntegerMetaData("scaling")[0];
+  if (do_scale_bc)
+    printf("\nscaling is enabled\n");
+  else
+    printf("\nscaling is disabled\n");
+  // decision variable to enable benefit value branch decision instead of simple sensitivity based decision
+  // benefit value is the (scalar) product of sensitivities of both boundaries of an interval
+  bool do_determine_bv = p_space->GetIntegerMetaData("benefit_value")[0];
+  if (do_determine_bv)
+    printf("\nbenefit value calculation is enabled\n");
+  else
+    printf("\nbenefit value calculation is disabled\n");
+  // get parameter flags
   const std::vector<std::string> parnames = p_space->GetStringMetaData("idx_names");
   const std::vector<Index> intervalflags = p_space->GetIntegerMetaData("intervalID");
   const std::vector<Index> parameterflags = p_space->GetIntegerMetaData("parameter");
@@ -278,7 +288,7 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
 
   Index* tmp_par = new Index;
   Index* tmp_ID = new Index;
-  bool tmp_upper = 0;
+  bool tmp_is_upper = 0;
   IntervalInfo IntInfo;
 
   // search for parameterentries completing one set of parameters
@@ -289,10 +299,10 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
       if (parameterflags[k] && intervalflags[k]) {
 	if (*tmp_par == parameterflags[k] && *tmp_ID == intervalflags[k]) {
 	  // add set to list of parametersets
-	  tmp_upper = (par_values[j]>par_values[k]);
-	  IntInfo = IntervalInfo(*tmp_par,*tmp_ID,j,tmp_upper);
+	  tmp_is_upper = (par_values[j]>par_values[k]);
+	  IntInfo = IntervalInfo(*tmp_par,*tmp_ID,j,tmp_is_upper);
 	  parametersets.push_back(IntInfo);
-	  IntInfo = IntervalInfo(*tmp_par,*tmp_ID,k,!tmp_upper);
+	  IntInfo = IntervalInfo(*tmp_par,*tmp_ID,k,!tmp_is_upper);
 	  parametersets.push_back(IntInfo);
 	  k = i_p;
 	}
@@ -300,8 +310,45 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
     }
   }
 
-  //  printf("ampl_ipopt.cpp: Calling IntervalInfoSet Constructor(std::vector ...) with parametersets. Size of vector: %d", parametersets.size());
   IntervalInfoSet intervals = IntervalInfoSet(parametersets);
+  // determine total parameter intervalwidths
+  intervals.GetParameterCount(*tmp_par);
+  std::vector<Number> tmp_upper(*tmp_par);
+  std::vector<Number> tmp_lower(*tmp_par);
+  std::vector<bool> tmp_is_set(*tmp_par);
+  for (int i=0;i<*tmp_par;i++) {
+    tmp_is_set[i]=false;
+  }
+
+  // printf("\ntmp_par zeigt auf den Wert: %d\n",*tmp_par);
+  for (int j=0; j<i_p;j++) {
+    *tmp_par = parameterflags[j]-1;
+    // printf("\ntmp_par zeigt auf den Wert: %d\n",*tmp_par);
+    if (!tmp_is_set[*tmp_par]) {
+      tmp_upper[*tmp_par]= par_values[j];
+      tmp_lower[*tmp_par]= par_values[j];
+      tmp_is_set[*tmp_par]= true;
+	  printf("\nGrenzen des Intervalbereichs für Parameter %d initialisiert auf: %f \n", *tmp_par+1,par_values[j] );
+    } else {
+      if (intervals.IsUpper(j)) {
+	if ((tmp_upper[*tmp_par])<par_values[j]) {
+	  tmp_upper[*tmp_par]=par_values[j];
+	  printf("\nGrenze des Intervalbereichs für Parameter %d korrigiert auf: %f \n", *tmp_par+1,par_values[j] );
+	}
+      } else {
+	if ((tmp_lower[*tmp_par])>par_values[j]) {
+	  tmp_lower[*tmp_par]=par_values[j];
+	  printf("\nGrenze des Intervalbereichs für Parameter %d korrigiert auf: %f \n", *tmp_par+1,par_values[j] );
+	}
+
+      }
+    }
+  }
+  std::vector<Number> total_int_widths(tmp_upper.size());
+  for (int i=0;i<tmp_upper.size();i++) {
+    total_int_widths[i] = tmp_upper[i]-tmp_lower[i];
+    printf("\nTotale Intervallbreite Parameter %d ist demnach: %f\n", i+1,total_int_widths[i]);
+  }
 
 //cycle through intervalset to assign upper and lower value vector indexes to each other
   std::vector<Index> lower_idx(int(intervals.Size()/2));
@@ -319,7 +366,9 @@ for (Index i=0;i<intervals.Size();i=i+1) {
   std::vector<Number> intervalwidths(int(intervals.Size()/2));
   if (do_scale_bc) {
     for (Index i=0;i<intervalwidths.size();i++) {
-      intervalwidths[i]=par_values[upper_idx.at(i)]-par_values[lower_idx.at(i)];
+      intervals.GetParameterID(upper_idx[i],*tmp_par);
+      intervalwidths[i]=(par_values[upper_idx.at(i)]-par_values[lower_idx.at(i)])/total_int_widths[*tmp_par-1];
+      printf("\n skalierte Intervalbreite %d für Parameter %d beträgt: %f\n",i,*tmp_par,intervalwidths[i]);
     }
   } else {
     for (int i=0;i<intervalwidths.size();i++)
@@ -437,7 +486,7 @@ for (Index i=0;i<intervals.Size();i=i+1) {
 		}
 	      } else {
 	        tmp_bv = intervalwidths[i]*s_values_lower[ctrl_rows.at(j)];
-		printf("\n\n benefit_values.size(): %d    j: %d   \n\n",benefit_values.size(),j);
+
 		if (tmp_bv<benefit_values[j]) {
 		  benefit_values[j] = tmp_bv;
 		  tagged_cols[j]= lower_idx[i];
@@ -488,14 +537,14 @@ for (Index i=0;i<intervals.Size();i=i+1) {
   for (int j=0; j<tagged_cols.size();j++) {
     for (int i=0; i<parametersets.size();i++) {
       parametersets[i].GetIndex(tmp_idx);
-      //      printf("\n\n aktuell untersuchter Index ist: %d\n\n",tmp_idx);
+      //            printf("\n\n aktuell untersuchter Index ist: %d\n\n",tmp_idx);
       if (tmp_idx == tagged_cols[j]) {
-	//	printf("\n\ncrit_int erst: %d\n\n",crit_int[j]);
+		// printf("\n\ncrit_int erst: %d\n\n",crit_int[j]);
 	parametersets[i].GetIntervalID(crit_int[j]);
-	//	printf("\n\ncrit_int dann:: %d\n\n",crit_int[j]);
-	//	printf("\n\ncrit_par erst: %d\n\n",crit_par[j]);
+		// printf("\n\ncrit_int dann:: %d\n\n",crit_int[j]);
+		// printf("\n\ncrit_par erst: %d\n\n",crit_par[j]);
 	parametersets[i].GetParameterID(crit_par[j]);
-	//	printf("\n\ncrit_par dann: %d\n\n",crit_par[j]);
+		// printf("\n\ncrit_par dann: %d\n\n",crit_par[j]);
 	i=parametersets.size();
       }
     }

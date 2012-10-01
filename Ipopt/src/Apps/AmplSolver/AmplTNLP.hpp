@@ -668,6 +668,8 @@ namespace Ipopt
     void IsUpperVec(std::vector<bool> &is_uppervec);
     bool IsUpper(Index isupperindex);
     void GetOtherBndIdx(Index boundindex,Index &otherbndidx);
+    void GetParameterCount(Index &paracount);
+    void GetIntervalCount(Index &intervalcount);
     void PrintSet();
     Index Size();
 
