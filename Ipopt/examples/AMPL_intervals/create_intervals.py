@@ -52,17 +52,16 @@ class Interval:
 
 class AmplSet:
     """an ampl setup: ampl srcipt and feasible set of intervals"""
-    branchmode = 2
-    scaling = 1
-    benefits = 1
-
-    def __init__(self, ampl_script, pLnames, pUnames, pLvalues, pUvalues):
+    def __init__(self, ampl_script, pLnames, pUnames, pLvalues, pUvalues,bm,sc,bv):
         self.ampl_script = ampl_script
         self.pLnames = pLnames
         self.pUnames = pUnames
         self.pLvalues = pLvalues
         self.pUvalues = pUvalues
         self.intervals = [Interval(pLvalues, pUvalues)]
+        self.branchmode = bm
+        self.scaling = sc
+        self.benefits = bv
 
     def write_include_file(self, filename='intervals.inc'):
         """write current intervallization data into ampl include file"""
@@ -163,14 +162,17 @@ class AmplSet:
             plt.savefig(filename)
 
 def run():
-    ampl_script = 'autorandomintervals.run'
-    pLnames = ['p1L', 'p2L']
-    pUnames = ['p1U', 'p2U']
-    pLvalues = [0.9, 0.8]
-    pUvalues = [1.1, 1.2]
-    info = AmplSet(ampl_script, pLnames, pUnames, pLvalues, pUvalues)
+    for bm in [1,2,3]:
+        for sc in [1,2]:
+            for bv in  [1,2]:
+                ampl_script = 'autorandomintervals.run'
+                pLnames = ['p1L', 'p2L']
+                pUnames = ['p1U', 'p2U']
+                pLvalues = [0.9, 0.8]
+                pUvalues = [1.1, 1.2]
+                info = AmplSet(ampl_script, pLnames, pUnames, pLvalues, pUvalues,bm,sc,bv)
     #info.randomize(2)
-    info.branch_controlwise(10)
+                info.branch_controlwise(10)
 
 if __name__=='__main__':
     run()

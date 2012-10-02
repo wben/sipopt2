@@ -9,9 +9,9 @@ let {q in int} p1U[q].parameter :=  1;
 let {q in int} p2L[q].parameter :=  2;
 let {q in int} p2U[q].parameter :=  2;
 
-let p1L[1].branchmode := 0;
+let p1L[1].branchmode := 3;
 let p1L[1].scaling := 0;
-let p1L[1].benfit_value := 1;
+let p1L[1].benefit_value := 1;
 let p1L[1] := 0.9;
 let p1U[1] := 1.1;
 

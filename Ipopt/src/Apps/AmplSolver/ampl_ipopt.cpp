@@ -248,23 +248,29 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   SmartPtr<const DenseVectorSpace> p_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(p->OwnerSpace()));
 
   // decision variable to determine branching criterion:
-  // 1 is strictly greater than, 2 is strictly smaller than, 0 is absolute value str.ly greater than
+  // 1 is strictly greater than, 2 is strictly smaller than, 3 is absolute value str.ly greater than
   Index branchmode = p_space->GetIntegerMetaData("branchmode")[0];
   printf("\nbranchmode is %d \n", branchmode);
 
   // decision variable to enable or disable sensitivity scaling - scaling branching criterion by interval width
-  bool do_scale_bc = p_space->GetIntegerMetaData("scaling")[0];
-  if (do_scale_bc)
-    printf("\nscaling is enabled\n");
-  else
-    printf("\nscaling is disabled\n");
-  // decision variable to enable benefit value branch decision instead of simple sensitivity based decision
+  bool do_scale_bc = false;
+
+      if (p_space->GetIntegerMetaData("scaling")[0]==2)
+	do_scale_bc = true;
+      if (do_scale_bc)
+	printf("\nscaling is enabled\n");
+      else
+	printf("\nscaling is disabled\n");
+
+  // decision variable to enable benefit value branch descision instead of simple sensitivity based decision
   // benefit value is the (scalar) product of sensitivities of both boundaries of an interval
-  bool do_determine_bv = p_space->GetIntegerMetaData("benefit_value")[0];
-  if (do_determine_bv)
-    printf("\nbenefit value calculation is enabled\n");
-  else
-    printf("\nbenefit value calculation is disabled\n");
+  bool do_determine_bv = false;
+  if (p_space->GetIntegerMetaData("benefit_value")[0]==2)
+      do_determine_bv = true;
+    if (do_determine_bv)
+      printf("\nbenefit value calculation is enabled\n");
+    else
+      printf("\nbenefit value calculation is disabled\n");
   // get parameter flags
   const std::vector<std::string> parnames = p_space->GetStringMetaData("idx_names");
   const std::vector<Index> intervalflags = p_space->GetIntegerMetaData("intervalID");
@@ -320,25 +326,20 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
     tmp_is_set[i]=false;
   }
 
-  // printf("\ntmp_par zeigt auf den Wert: %d\n",*tmp_par);
   for (int j=0; j<i_p;j++) {
     *tmp_par = parameterflags[j]-1;
-    // printf("\ntmp_par zeigt auf den Wert: %d\n",*tmp_par);
     if (!tmp_is_set[*tmp_par]) {
       tmp_upper[*tmp_par]= par_values[j];
       tmp_lower[*tmp_par]= par_values[j];
       tmp_is_set[*tmp_par]= true;
-	  printf("\nGrenzen des Intervalbereichs für Parameter %d initialisiert auf: %f \n", *tmp_par+1,par_values[j] );
     } else {
       if (intervals.IsUpper(j)) {
 	if ((tmp_upper[*tmp_par])<par_values[j]) {
 	  tmp_upper[*tmp_par]=par_values[j];
-	  printf("\nGrenze des Intervalbereichs für Parameter %d korrigiert auf: %f \n", *tmp_par+1,par_values[j] );
 	}
       } else {
 	if ((tmp_lower[*tmp_par])>par_values[j]) {
 	  tmp_lower[*tmp_par]=par_values[j];
-	  printf("\nGrenze des Intervalbereichs für Parameter %d korrigiert auf: %f \n", *tmp_par+1,par_values[j] );
 	}
 
       }
@@ -347,7 +348,6 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   std::vector<Number> total_int_widths(tmp_upper.size());
   for (int i=0;i<tmp_upper.size();i++) {
     total_int_widths[i] = tmp_upper[i]-tmp_lower[i];
-    printf("\nTotale Intervallbreite Parameter %d ist demnach: %f\n", i+1,total_int_widths[i]);
   }
 
 //cycle through intervalset to assign upper and lower value vector indexes to each other
@@ -400,7 +400,7 @@ for (Index i=0;i<intervals.Size();i=i+1) {
 
       for (int j=0;j<ctrl_rows.size();j++) {
 	if (i==0) {
-	  if (branchmode>0) {
+	  if (branchmode<3) {
 	    if (do_determine_bv) {
 	      benefit_values[j]=s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)]*intervalwidths[i];
 	      tagged_cols[j]=upper_idx[i];
@@ -426,7 +426,7 @@ for (Index i=0;i<intervals.Size();i=i+1) {
 		}
 	      }
 	    }
-	  } else { // branchmode==0, i==0
+	  } else { // branchmode==3, i==0
 	    if (do_determine_bv) {
 	      benefit_values[j]=Abs(s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)]*intervalwidths[i]);
 	      tagged_cols[j]=upper_idx[i];
@@ -495,7 +495,7 @@ for (Index i=0;i<intervals.Size();i=i+1) {
 	      }
 	    }
 	  }
-	  if (branchmode==0) {
+	  if (branchmode==3) {
 	    if (do_determine_bv) {
 	      tmp_bv = Abs(intervalwidths[i]*s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)]);
 	      if (tmp_bv>benefit_values[j]) {
