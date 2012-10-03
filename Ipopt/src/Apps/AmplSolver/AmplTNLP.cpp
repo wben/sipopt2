@@ -2162,7 +2162,7 @@ namespace Ipopt
 
   void IntervalInfoSet::GetParameterIDVec(std::vector<Index> &parameterIDvec)
   {
-    parameterIDvec_ = parameterIDvec_;
+    parameterIDvec = parameterIDvec_;
   }
 
   void IntervalInfoSet::GetParameterID(Index paraindex, Index &parameterID)

@@ -68,6 +68,7 @@ fecolxBU0{kk in int, i in 1..1,j in cp}:       xBU[kk,i,j] = xBU_init+time*h[i]*
 # state constraint
 xCU_def{k in int} : xCU[k] = 1 - xAL[k,nfe,ncp] - xBL[k,nfe,ncp];
 xCmax{k in int} : xCU[k] <= 0.2;
+# xCmax{k in int} : xCU[k] <= 0.1;
 
 # objective function...
 

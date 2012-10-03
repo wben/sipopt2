@@ -2,7 +2,14 @@ import subprocess
 import sys
 import random
 import matplotlib.pyplot as plt
+import argparse
 from matplotlib.patches import Rectangle
+
+#parser = argparse.ArgumentParser(description='Run AMPL/IpOpt Intervalization
+#parser.add_argument('nloops',nargs=1,type=int)
+#parser.add_argument('-bm',nargs=1,type=int)
+#parser.add_argument('-s',nargs=1,type=int)
+#parser.add_argument('-bv',nargs=1,type=int)
 
 class Interval:
     """Representation of upper and lower bound"""
@@ -52,7 +59,7 @@ class Interval:
 
 class AmplSet:
     """an ampl setup: ampl srcipt and feasible set of intervals"""
-    def __init__(self, ampl_script, pLnames, pUnames, pLvalues, pUvalues,bm,sc,bv):
+    def __init__(self, ampl_script, pLnames, pUnames, pLvalues, pUvalues,bm,sc,bv,idx):
         self.ampl_script = ampl_script
         self.pLnames = pLnames
         self.pUnames = pUnames
@@ -62,6 +69,9 @@ class AmplSet:
         self.branchmode = bm
         self.scaling = sc
         self.benefits = bv
+        self.q = idx
+        self.split_sizes = []
+        self.split_ints = []
 
     def write_include_file(self, filename='intervals.inc'):
         """write current intervallization data into ampl include file"""
@@ -102,8 +112,20 @@ class AmplSet:
     def split(self, interval_idx, para_idx):
         """split interval at interval_idx with respect to parameter para_idx"""
         split_interval = self.intervals.pop(interval_idx)
+        self.split_ints.append(split_interval);
+        if interval_idx < len(self.intervals)-2:
+            self.split_sizes.append(2)
+        else:
+            self.split_sizes.append(1)
         interval1, interval2 = split_interval.split(para_idx)
         self.intervals.extend([interval1, interval2])
+
+    def undo_splits(self, ns=1):
+        """undo the last ns splits - default is one"""
+        for ir in range(ns):
+            for ic in range(self.split_sizes(len(self.split_sizes)-1)):
+                self.intervals.pop(len(self.intervals)-1)
+            self.intervals.append(self.split_ints.pop(len(self.split_ints)-1))
 
     def randomize(self,nruns):
         """randomly split nruns times"""
@@ -119,25 +141,25 @@ class AmplSet:
         """read control sensitivity data and split specified interval """
         for ir in range(nruns):
             # common output tags: bmX with X as branchmode setting, s0/1 for no/scaling, bv0/1 for no/benfit value usage
-            output_f = open('op_bm'+str(self.branchmode)+'_s'+str(self.scaling)+'_bv'+str(self.benefits)+'_'+str(ir)+'.txt', 'w')
+            output_f = open(str(self.q)+'_loop_bm'+str(self.branchmode)+'_s'+str(self.scaling)+'_bv'+str(self.benefits)+'_'+str(ir)+'.txt', 'w')
             self.call_ampl(output_file_handle=output_f)
             output_f.close()
             branch_file_handle = 'branch_intervals.dat'
             (nint,npar)=self.read_branch(branch_file_handle)
             for (i,p) in zip(nint,npar):
                 self.split(i,p)
-            self.plot(dim=[0,1], filename='cbplot'+str(ir)+'.png')
+            self.plot(dim=[0,1], filename=str(self.q)+'_loopplot_bm'+str(self.branchmode)+'_s'+str(self.scaling)+'_bv'+str(self.benefits)+'_'+str(ir)+'.png')
 
-    def read_branch(self,fhandle):
+    def read_branch(self,fname):
         """
-        read interval data from specified file fhandle
+        read interval data from specified file fname
 
-        in: fhandle, full name of to be read file
+        in: fname, full name of to be read file
         out: tuple of intervalID(s) and parameter index(es) to be split (0based notation)
         """
         pars = []
         ints = []
-        input_f = open(fhandle)
+        input_f = open(fname)
         for tmp_line in input_f:
             if 'parameter' in tmp_line:
                 (int_part,dummy,npar) = tmp_line.partition('parameter: ')
@@ -162,17 +184,19 @@ class AmplSet:
             plt.savefig(filename)
 
 def run():
-    for bm in [1,2,3]:
-        for sc in [1,2]:
-            for bv in  [1,2]:
-                ampl_script = 'autorandomintervals.run'
-                pLnames = ['p1L', 'p2L']
-                pUnames = ['p1U', 'p2U']
-                pLvalues = [0.9, 0.8]
-                pUvalues = [1.1, 1.2]
-                info = AmplSet(ampl_script, pLnames, pUnames, pLvalues, pUvalues,bm,sc,bv)
+    for q,(pLvalues,pUvalues) in enumerate([([0.3,0.3],[1.7,1.7])]): #,([0.2,0.2],[1.8,1.8]),([0.1,0.1],[1.9,1.9])]):
+
+        for (bm,sc,bv) in [(3,2,2)]: #(2,2,2),(3,2,1)
+      #  for sc in [1,2]:
+       #     for bv in  [1,2]:
+            ampl_script = 'autorandomintervals.run'
+            pLnames = ['p1L', 'p2L']
+            pUnames = ['p1U', 'p2U']
+ #       pLvalues = [0.3, 0.3]
+ #       pUvalues = [1.8, 1.8]
+            info = AmplSet(ampl_script, pLnames, pUnames, pLvalues, pUvalues,bm,sc,bv,q)
     #info.randomize(2)
-                info.branch_controlwise(10)
+            info.branch_controlwise(3)
 
 if __name__=='__main__':
     run()

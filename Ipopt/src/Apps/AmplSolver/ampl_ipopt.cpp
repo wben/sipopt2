@@ -42,9 +42,11 @@ using namespace Ipopt;
 SmartPtr<Matrix> getSensitivityMatrix(SmartPtr<IpoptApplication> app);
 SmartPtr<Vector> getDirectionalDerivative(SmartPtr<IpoptApplication> app,
 					  SmartPtr<Matrix> sens_matrix);
+bool doIntervalization(SmartPtr<IpoptApplication> app);
+IntervalInfoSet GetIntInfoSet(SmartPtr<const DenseVector> parameters, const std::vector<std::string> par_names, std::vector<Number> par_values);
+std::vector<Number> GetIntervalWidths(IntervalInfoSet intervals,std::vector<Number> par_values, bool do_scaling=false);
 Number Abs(Number value);
 
-bool doIntervalization(SmartPtr<IpoptApplication> app);
 
 int main(int argc, char**args)
 {
@@ -250,34 +252,29 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   // decision variable to determine branching criterion:
   // 1 is strictly greater than, 2 is strictly smaller than, 3 is absolute value str.ly greater than
   Index branchmode = p_space->GetIntegerMetaData("branchmode")[0];
-  printf("\nbranchmode is %d \n", branchmode);
+  // printf("\nbranchmode is %d \n", branchmode);
 
   // decision variable to enable or disable sensitivity scaling - scaling branching criterion by interval width
   bool do_scale_bc = false;
-
-      if (p_space->GetIntegerMetaData("scaling")[0]==2)
-	do_scale_bc = true;
-      if (do_scale_bc)
-	printf("\nscaling is enabled\n");
-      else
-	printf("\nscaling is disabled\n");
+  if (p_space->GetIntegerMetaData("scaling")[0]==2)
+    do_scale_bc = true;
+      // if (do_scale_bc)
+	// printf("\nscaling is enabled\n");
+	//      else
+	// printf("\nscaling is disabled\n");
 
   // decision variable to enable benefit value branch descision instead of simple sensitivity based decision
   // benefit value is the (scalar) product of sensitivities of both boundaries of an interval
   bool do_determine_bv = false;
   if (p_space->GetIntegerMetaData("benefit_value")[0]==2)
       do_determine_bv = true;
-    if (do_determine_bv)
-      printf("\nbenefit value calculation is enabled\n");
-    else
-      printf("\nbenefit value calculation is disabled\n");
-  // get parameter flags
+  //    if (do_determine_bv)
+      // printf("\nbenefit value calculation is enabled\n");
+  //    else
+      // printf("\nbenefit value calculation is disabled\n");
+
+  // get parameter names
   const std::vector<std::string> parnames = p_space->GetStringMetaData("idx_names");
-  const std::vector<Index> intervalflags = p_space->GetIntegerMetaData("intervalID");
-  const std::vector<Index> parameterflags = p_space->GetIntegerMetaData("parameter");
-
-  //  printf("\n\n intervalflag: %d parameterflag: %d  \n\n", intervalflags[tagged_cols[0]], parameterflags[tagged_cols[0]]);
-
   const Index i_p = p_space->Dim();
   std::vector<std::string> par_names_tmp;
   for (int i=0;i<i_p;i++)
@@ -287,6 +284,222 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   const Number* p_val = p->Values();
   std::vector<Number> par_values(i_p);
   std::copy(p_val, p_val+i_p,&par_values[0]);
+
+  IntervalInfoSet intervals = GetIntInfoSet(p,par_names,par_values);
+  std::vector<Number> intervalwidths;
+  intervalwidths= GetIntervalWidths(intervals,par_values,do_scale_bc);
+
+  //cycle through intervalset to assign upper and lower value vector indexes to each other
+  std::vector<Index> lower_idx(int(intervals.Size()/2));
+  std::vector<Index> upper_idx(int(intervals.Size()/2));
+  int tmp_j =0;
+  for (Index i=0;i<intervals.Size();i=i+1) {
+    if (intervals.IsUpper(i)) {
+      intervals.GetIndex(i,upper_idx[tmp_j]);
+      intervals.GetOtherBndIdx(upper_idx[tmp_j],lower_idx[tmp_j]);
+      tmp_j++;
+    }
+  }
+
+  const std::vector<Index> var_int_flags = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(mv_sens->ColVectorSpace()))->GetIntegerMetaData("intervalID");
+
+  // cycle through var space interval flags to identify and save control indexes
+  for (int i=0;i<nrows;i++) {
+    if (!var_int_flags[i])
+      ctrl_rows.push_back(i);
+    //  // printf("\ndx/dp MetaData: intervalID an der Stelle %d hat den Wert %d.\n", i, var_int_flags[i]);
+  }
+  std::vector<Number> benefit_values(ctrl_rows.size());
+  std::vector<Index> tagged_cols(ctrl_rows.size());
+
+  //cycle through lower/upper indexes and store the value relevant to current branching options
+  for (int i =0;i<lower_idx.size();i++) {
+    if (ctrl_rows.size()) {
+      // get concrete sensitivity values
+      std::vector<Number> s_values_lower(nrows);
+      const Number* s_val = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(lower_idx[i])))->Values();
+      std::copy(s_val, s_val+nrows,&s_values_lower[0]);
+      std::vector<Number> s_values_upper(nrows);
+      s_val = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(upper_idx[i])))->Values();
+      std::copy(s_val, s_val+nrows,&s_values_upper[0]);
+
+      for (int j=0;j<ctrl_rows.size();j++) {
+	if (i==0) {
+	  if (branchmode<3) {
+	    if (do_determine_bv) {
+	      benefit_values[j]=s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)]*intervalwidths[i];
+	      tagged_cols[j]=upper_idx[i];
+	    } else {
+	      if (s_values_upper[ctrl_rows.at(j)]>s_values_lower[ctrl_rows.at(j)]) {
+		if (branchmode==1) {
+		  benefit_values[j]=s_values_upper[ctrl_rows.at(j)]*intervalwidths[i];
+		  tagged_cols[j]=upper_idx[i];
+		} else {
+		  benefit_values[j]=s_values_lower[ctrl_rows.at(j)]*intervalwidths[i];
+		  tagged_cols[j]=lower_idx[i];
+		}
+	      } else {
+		if (branchmode==1) {
+		  benefit_values[j]=s_values_lower[ctrl_rows.at(j)]*intervalwidths[i];
+		  tagged_cols[j]=lower_idx[i];
+		} else {
+		  benefit_values[j]=s_values_upper[ctrl_rows.at(j)]*intervalwidths[i];
+		  tagged_cols[j]=upper_idx[i];
+		}
+	      }
+	    }
+	  } else { // branchmode==3, i==0
+	    if (do_determine_bv) {
+	      benefit_values[j]=Abs(s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)]*intervalwidths[i]);
+	      tagged_cols[j]=upper_idx[i];
+	    } else {
+	      if (Abs(s_values_upper[ctrl_rows.at(j)])>Abs(s_values_lower[ctrl_rows.at(j)])) {
+		benefit_values[j]=Abs(s_values_upper[ctrl_rows.at(j)]*intervalwidths[i]);
+		tagged_cols[j]=upper_idx[i];
+	      } else {
+		benefit_values[j]=Abs(s_values_lower[ctrl_rows.at(j)]*intervalwidths[i]);
+		tagged_cols[j]=lower_idx[i];
+	      }
+	    }
+	  }
+	  // printf("\nbenefit_values Erstzuweisung (%e). Resultat aus: oben: %e    unten: %e   Intervalbreite: %e Spalte Obergrenze: %d Spalte Untergrenze: %d .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],upper_idx[i],lower_idx[i]);
+
+	} else { // i=/=0
+	  if (branchmode==3) {
+	    if (do_determine_bv) {
+	      tmp_bv = Abs(intervalwidths[i]*s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)]);
+	      // printf("\ntmp_bv is: %e   benefit_values[j] is: %e \n",tmp_bv,benefit_values[j]);
+	      if (tmp_bv>benefit_values[j]) {
+		benefit_values[j] = tmp_bv;
+		tagged_cols[j]=upper_idx[i];
+		// printf("\nbenefit_values Neuzuweisung (%e) Resultat aus: oben: %e    unten: %e   Intervalbreite: %e   tmp_bv: %e Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
+	      }
+	    } else { // no benefit_values : compare upper and lower values first, then compare the stronger one with currently stored value
+	      // printf("\nupper value: %e   lower value: %e\n",s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)]);
+	      if (Abs(s_values_upper[ctrl_rows.at(j)])>Abs(s_values_lower[ctrl_rows.at(j)])) {
+		tmp_bv = Abs(intervalwidths[i]*s_values_upper[ctrl_rows.at(j)]);
+		if (tmp_bv>benefit_values[j]) {
+		  benefit_values[j] = tmp_bv;
+		  tagged_cols[j]= upper_idx[i];
+		  // printf("\nbenefit_values Neuzuweisung (%e) Resultat aus: oben: %e    unten: %e   Intervalbreite: %e   tmp_bv: %e Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
+		}
+	      } else { // lower value larger than upper value
+		tmp_bv = Abs(intervalwidths[i]*s_values_lower[ctrl_rows.at(j)]);
+		if (tmp_bv>benefit_values[j]) {
+		  benefit_values[j] = tmp_bv;
+		  tagged_cols[j]= lower_idx[i];
+		  // printf("\nbenefit_values Neuzuweisung (%e) Resultat aus: oben: %e    unten: %e   Intervalbreite: %e   tmp_bv: %e Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
+		}
+	      }
+	    }
+	  } //branchmode is not 3
+
+	  else if (do_determine_bv) {
+	    tmp_bv = intervalwidths[i]*s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)];
+	    // printf("\ntmp_bv is: %e   benefit_values[j] is: %e \n",tmp_bv,benefit_values[j]);
+	    if (tmp_bv>benefit_values[j]) {
+	      if (branchmode ==1) {
+		benefit_values[j] = tmp_bv;
+		tagged_cols[j]=(upper_idx[i]);
+		// printf("\nbenefit_values Neuzuweisung (%e) Resultat aus: oben: %e    unten: %e   Intervalbreite: %e   tmp_bv: %e Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
+	      }
+	    } else {
+	      if (branchmode ==2) {
+		benefit_values[j] = tmp_bv;
+		tagged_cols[j]=(upper_idx[i]);
+		// printf("\nbenefit_values Neuzuweisung (%e) Resultat aus: oben: %e    unten: %e   Intervalbreite: %e   tmp_bv: %e Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
+	      }
+	    }
+	  } else { // no benefit_values : compare upper and lower values first, then compare the stronger one with currently stored value
+	    // printf("\nupper value: %e   lower value: %e\n",s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)]);
+	    if (s_values_upper[ctrl_rows.at(j)]>s_values_lower[ctrl_rows.at(j)]) {
+	      if (branchmode==1) {
+		tmp_bv = intervalwidths[i]*s_values_upper[ctrl_rows.at(j)];
+	      } else { //branchmode ==2
+		tmp_bv = intervalwidths[i]*s_values_lower[ctrl_rows.at(j)];
+	      }
+	      if (tmp_bv>benefit_values[j]) {
+		if (branchmode==1){
+		  benefit_values[j] = tmp_bv;
+		  tagged_cols[j]= upper_idx[i];
+		  // printf("\nbenefit_values Neuzuweisung (%e) Resultat aus: oben: %e    unten: %e   Intervalbreite: %e   tmp_bv: %e Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
+		}
+	      } else if (branchmode==2) {
+		benefit_values[j] = tmp_bv;
+		tagged_cols[j]= upper_idx[i];
+		// printf("\nbenefit_values Neuzuweisung (%e) Resultat aus: oben: %e    unten: %e   Intervalbreite: %e   tmp_bv: %e Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
+	      }
+	    } else { // lower value larger than upper value
+	      if (branchmode==1) {
+		tmp_bv = intervalwidths[i]*s_values_lower[ctrl_rows.at(j)];
+	      } else { //branchmode ==2
+		tmp_bv = intervalwidths[i]*s_values_upper[ctrl_rows.at(j)];
+	      }
+	      if (tmp_bv>benefit_values[j]) {
+		if (branchmode==1){
+		  benefit_values[j] = tmp_bv;
+		  tagged_cols[j]= upper_idx[i];
+		  // printf("\nbenefit_values Neuzuweisung (%e) Resultat aus: oben: %e    unten: %e   Intervalbreite: %e   tmp_bv: %e Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
+		}
+	      } else if (branchmode==2) {
+		benefit_values[j] = tmp_bv;
+		tagged_cols[j]= upper_idx[i];
+		// printf("\nbenefit_values Neuzuweisung (%e) Resultat aus: oben: %e    unten: %e   Intervalbreite: %e   tmp_bv: %e Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
+	      }
+	    }
+	  }
+	}
+      }// end of j for (control cycle)
+    } // end of sens size check
+  }// end of sensitivity cycling for
+
+  SmartPtr<const IteratesVector> curr = app->IpoptDataObject()->curr();
+  // get critical interval and parameter for all controls
+  Index tmp_idx=0;
+  std::vector<Index> crit_int(tagged_cols.size());
+  std::vector<Index> crit_par(tagged_cols.size());
+
+  for (int j=0; j<tagged_cols.size();j++) {
+    for (int i=0; i<i_p;i++) {
+      intervals.GetIndex(i,tmp_idx);
+      //            // printf("\n\n aktuell untersuchter Index ist: %d\n\n",tmp_idx);
+      if (tmp_idx == tagged_cols[j]) {
+		// printf("\n\ncrit_int erst: %d\n\n",crit_int[j]);
+	intervals.GetIntervalID(i,crit_int[j]);
+		// printf("\n\ncrit_int dann:: %d\n\n",crit_int[j]);
+		// printf("\n\ncrit_par erst: %d\n\n",crit_par[j]);
+	intervals.GetParameterID(i,crit_par[j]);
+		// printf("\n\ncrit_par dann: %d\n\n",crit_par[j]);
+	i=i_p;
+      }
+    }
+  }
+
+  //write gathered information into .dat file to access with python
+  std::string fname = "branch_intervals.dat";
+  std::ofstream branch_intervals;
+  branch_intervals.open(fname.c_str());
+  char buffer[63];
+  branch_intervals << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
+  for (int i=0;i<crit_int.size();i++) {
+    sprintf(buffer,"\nintervalID: %d parameter: %d\n",crit_int[i],crit_par[i]);
+    branch_intervals << buffer;
+  }
+  branch_intervals << "\n\n#end of file";
+  branch_intervals.close();
+
+  return 1;
+}
+
+IntervalInfoSet GetIntInfoSet(SmartPtr<const DenseVector> parameters, const std::vector<std::string> par_names, std::vector<Number> par_values)
+{
+  SmartPtr<const DenseVectorSpace> p_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(parameters->OwnerSpace()));
+
+  const std::vector<Index> intervalflags = p_space->GetIntegerMetaData("intervalID");
+  const std::vector<Index> parameterflags = p_space->GetIntegerMetaData("parameter");
+
+  //  // printf("\n\n intervalflag: %d parameterflag: %d  \n\n", intervalflags[tagged_cols[0]], parameterflags[tagged_cols[0]]);
+  const Index i_p = p_space->Dim();
 
   // ParameterSet is to contain all parameter/interval information
   // this would prefer to be a list
@@ -315,255 +528,86 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
       }
     }
   }
-
   IntervalInfoSet intervals = IntervalInfoSet(parametersets);
-  // determine total parameter intervalwidths
-  intervals.GetParameterCount(*tmp_par);
-  std::vector<Number> tmp_upper(*tmp_par);
-  std::vector<Number> tmp_lower(*tmp_par);
-  std::vector<bool> tmp_is_set(*tmp_par);
-  for (int i=0;i<*tmp_par;i++) {
-    tmp_is_set[i]=false;
-  }
+  return intervals;
+}
 
-  for (int j=0; j<i_p;j++) {
-    *tmp_par = parameterflags[j]-1;
-    if (!tmp_is_set[*tmp_par]) {
-      tmp_upper[*tmp_par]= par_values[j];
-      tmp_lower[*tmp_par]= par_values[j];
-      tmp_is_set[*tmp_par]= true;
-    } else {
-      if (intervals.IsUpper(j)) {
-	if ((tmp_upper[*tmp_par])<par_values[j]) {
-	  tmp_upper[*tmp_par]=par_values[j];
-	}
+std::vector<Number> GetIntervalWidths(IntervalInfoSet intervals,std::vector<Number> par_values, bool do_scaling)
+{
+  std::vector<Number> intervalwidths(int(intervals.Size()/2));
+  if (do_scaling) {
+
+    std::vector<Index> intervalflags;
+    intervals.GetIntervalIDVec(intervalflags);
+    // printf("\nintervalflags.size() is: %d\n",intervalflags.size());
+    //    for (int i=0;i<intervalflags.size();i++)
+      // printf("\nintervalflags[%d] is: %d\n",i,intervalflags[i]);
+
+    std::vector<Index> parameterflags;
+    intervals.GetParameterIDVec(parameterflags);
+    // printf("\nparameterflags.size() is: %d\n",intervalflags.size());
+    //    for (int i=0;i<parameterflags.size();i++)
+      // printf("\nparameterflags[%d] is: %d\n",i,parameterflags[i]);
+
+    Index* tmp_par = new Index;
+
+    // determine total parameter intervalwidths
+    intervals.GetParameterCount(*tmp_par);
+    std::vector<Number> tmp_upper(*tmp_par);
+    std::vector<Number> tmp_lower(*tmp_par);
+    std::vector<bool> tmp_is_set(*tmp_par);
+    for (int i=0;i<*tmp_par;i++) {
+      tmp_is_set[i]=false;
+    }
+
+    for (int j=0; j<parameterflags.size();j++) {
+      *tmp_par = parameterflags[j]-1;
+      if (!tmp_is_set[*tmp_par]) {
+	tmp_upper[*tmp_par]= par_values[j];
+	tmp_lower[*tmp_par]= par_values[j];
+	tmp_is_set[*tmp_par]= true;
       } else {
-	if ((tmp_lower[*tmp_par])>par_values[j]) {
-	  tmp_lower[*tmp_par]=par_values[j];
-	}
+	if (intervals.IsUpper(j)) {
+	  if ((tmp_upper[*tmp_par])<par_values[j]) {
+	    tmp_upper[*tmp_par]=par_values[j];
+	  }
+	} else {
+	  if ((tmp_lower[*tmp_par])>par_values[j]) {
+	    tmp_lower[*tmp_par]=par_values[j];
+	  }
 
+	}
       }
     }
-  }
-  std::vector<Number> total_int_widths(tmp_upper.size());
-  for (int i=0;i<tmp_upper.size();i++) {
-    total_int_widths[i] = tmp_upper[i]-tmp_lower[i];
-  }
-
-//cycle through intervalset to assign upper and lower value vector indexes to each other
-  std::vector<Index> lower_idx(int(intervals.Size()/2));
-  std::vector<Index> upper_idx(int(intervals.Size()/2));
-  int tmp_j =0;
-for (Index i=0;i<intervals.Size();i=i+1) {
-    if (intervals.IsUpper(i)) {
-      intervals.GetIndex(i,upper_idx[tmp_j]);
-      intervals.GetOtherBndIdx(upper_idx[tmp_j],lower_idx[tmp_j]);
-      tmp_j++;
+    std::vector<Number> total_int_widths(tmp_upper.size());
+    for (int i=0;i<tmp_upper.size();i++) {
+      total_int_widths[i] = tmp_upper[i]-tmp_lower[i];
     }
-  }
 
-  // determine intervalwidths for each parametervalue - the index of the intervalwidth stored here matches the one of the parameterdata in IntervalInfoSet intervals
-  std::vector<Number> intervalwidths(int(intervals.Size()/2));
-  if (do_scale_bc) {
+    //cycle through intervalset to assign upper and lower value vector indexes to each other
+    std::vector<Index> lower_idx(int(intervals.Size()/2));
+    std::vector<Index> upper_idx(int(intervals.Size()/2));
+    int tmp_j =0;
+    for (Index i=0;i<intervals.Size();i=i+1) {
+      if (intervals.IsUpper(i)) {
+	intervals.GetIndex(i,upper_idx[tmp_j]);
+	intervals.GetOtherBndIdx(upper_idx[tmp_j],lower_idx[tmp_j]);
+	tmp_j++;
+      }
+    }
+
+    // determine intervalwidths for each parametervalue - the index of the intervalwidth stored here matches the one of the parameterdata in IntervalInfoSet intervals
+
     for (Index i=0;i<intervalwidths.size();i++) {
       intervals.GetParameterID(upper_idx[i],*tmp_par);
       intervalwidths[i]=(par_values[upper_idx.at(i)]-par_values[lower_idx.at(i)])/total_int_widths[*tmp_par-1];
-      printf("\n skalierte Intervalbreite %d für Parameter %d beträgt: %f\n",i,*tmp_par,intervalwidths[i]);
+      // printf("\n skalierte Intervalbreite %d für Parameter %d beträgt: %f\n",i,*tmp_par,intervalwidths[i]);
     }
   } else {
     for (int i=0;i<intervalwidths.size();i++)
       intervalwidths[i]=1;
   }
-  // if s_space is only needed for this one MetaData evaluation, it need not be initialized and used anyway (single large dynamic_cast should do)
-  SmartPtr<const DenseVectorSpace> s_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(mv_sens->ColVectorSpace()));
-  const std::vector<Index> var_int_flags = s_space->GetIntegerMetaData("intervalID");
-
-  // cycle through vector space interval flags to identify and save control indexes
-  for (int i=0;i<nrows;i++) {
-    if (!var_int_flags[i])
-      ctrl_rows.push_back(i);
-    //  printf("\ndx/dp MetaData: intervalID an der Stelle %d hat den Wert %d.\n", i, var_int_flags[i]);
-  }
-  std::vector<Number> benefit_values(ctrl_rows.size());
-  std::vector<Index> tagged_cols(ctrl_rows.size());
-
-  //cycle through lower/upper indexes and store the value relevant to current branching options
-  for (int i =0;i<lower_idx.size();i++) {
-    if (ctrl_rows.size()) {
-      // get concrete sensitivity values
-      std::vector<Number> s_values_lower(nrows);
-      const Number* s_val = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(lower_idx[i])))->Values();
-      std::copy(s_val, s_val+nrows,&s_values_lower[0]);
-      std::vector<Number> s_values_upper(nrows);
-      s_val = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(upper_idx[i])))->Values();
-      std::copy(s_val, s_val+nrows,&s_values_upper[0]);
-
-      for (int j=0;j<ctrl_rows.size();j++) {
-	if (i==0) {
-	  if (branchmode<3) {
-	    if (do_determine_bv) {
-	      benefit_values[j]=s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)]*intervalwidths[i];
-	      tagged_cols[j]=upper_idx[i];
-	    } else {
-
-	      if (s_values_upper[ctrl_rows.at(j)]>s_values_lower[ctrl_rows.at(j)]) {
-		if (branchmode==1) {
-		  benefit_values[j]=s_values_upper[ctrl_rows.at(j)]*intervalwidths[i];
-		  tagged_cols[j]=upper_idx[i];
-		} else {
-
-		  benefit_values[j]=s_values_lower[ctrl_rows.at(j)]*intervalwidths[i];
-		  tagged_cols[j]=lower_idx[i];
-		}
-	      } else {
-		if (branchmode==1) {
-		  benefit_values[j]=s_values_lower[ctrl_rows.at(j)]*intervalwidths[i];
-		  tagged_cols[j]=lower_idx[i];
-		} else {
-
-		  benefit_values[j]=s_values_upper[ctrl_rows.at(j)]*intervalwidths[i];
-		  tagged_cols[j]=upper_idx[i];
-		}
-	      }
-	    }
-	  } else { // branchmode==3, i==0
-	    if (do_determine_bv) {
-	      benefit_values[j]=Abs(s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)]*intervalwidths[i]);
-	      tagged_cols[j]=upper_idx[i];
-	    } else {
-	      if (Abs(s_values_upper[ctrl_rows.at(j)])>Abs(s_values_lower[ctrl_rows.at(j)])) {
-		benefit_values[j]=Abs(s_values_upper[ctrl_rows.at(j)]*intervalwidths[i]);
-		tagged_cols[j]=upper_idx[i];
-	      } else {
-		benefit_values[j]=Abs(s_values_lower[ctrl_rows.at(j)]*intervalwidths[i]);
-		tagged_cols[j]=lower_idx[i];
-	      }
-	    }
-	  }
-	  printf("\nbenefit_values Erstzuweisung (%f). Resultat aus: oben: %f    unten: %f   Intervalbreite: %f Spalte Obergrenze: %d Spalte Untergrenze: %d .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],upper_idx[i],lower_idx[i]);
-	} else { // else of i==... if
-	  if (branchmode==1) {
-	    if (do_determine_bv) {
-	      tmp_bv = intervalwidths[i]*s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)];
-	      if (tmp_bv>benefit_values[j]) {
-		benefit_values[j] = tmp_bv;
-		tagged_cols[j]=(upper_idx[i]);
-		printf("\nbenefit_values Neuzuweisung (%f) Resultat aus: oben: %f    unten: %f   Intervalbreite: %f   tmp_bv: %f Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
-	      }
-	    } else {
-	      if (s_values_upper[ctrl_rows.at(j)]>s_values_lower[ctrl_rows.at(j)]) {
-		tmp_bv = intervalwidths[i]*s_values_upper[ctrl_rows.at(j)];
-		if (tmp_bv>benefit_values[j]) {
-		  benefit_values[j] = tmp_bv;
-		  tagged_cols[j]= upper_idx[i];
-		  printf("\nbenefit_values Neuzuweisung (%f) Resultat aus: oben: %f    unten: %f   Intervalbreite: %f   tmp_bv: %f Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
-		}
-	      } else {
-	        tmp_bv = intervalwidths[i]*s_values_lower[ctrl_rows.at(j)];
-		if (tmp_bv>benefit_values[j]) {
-		  benefit_values[j] = tmp_bv;
-		  tagged_cols[j]= lower_idx[i];
-		  printf("\nbenefit_values Neuzuweisung (%f) Resultat aus: oben: %f    unten: %f   Intervalbreite: %f   tmp_bv: %f Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
-		}
-	      }
-	    }
-	  }
-	  if (branchmode==2) {
-	    if (do_determine_bv) {
-	      tmp_bv = intervalwidths[i]*s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)];
-	      if (tmp_bv<benefit_values[j]) {
-		benefit_values[j] = tmp_bv;
-		tagged_cols[j]=(upper_idx[i]);
-		printf("\nbenefit_values Neuzuweisung (%f) Resultat aus: oben: %f    unten: %f   Intervalbreite: %f   tmp_bv: %f Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
-	      }
-	    } else {
-	      if (s_values_upper[ctrl_rows.at(j)]<s_values_lower[ctrl_rows.at(j)]) {
-		tmp_bv = intervalwidths[i]*s_values_upper[ctrl_rows.at(j)];
-		if (tmp_bv<benefit_values[j]) {
-		  benefit_values[j] = tmp_bv;
-		  tagged_cols[j]= upper_idx[i];
-		  printf("\nbenefit_values Neuzuweisung (%f) Resultat aus: oben: %f    unten: %f   Intervalbreite: %f   tmp_bv: %f Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
-		}
-	      } else {
-	        tmp_bv = intervalwidths[i]*s_values_lower[ctrl_rows.at(j)];
-
-		if (tmp_bv<benefit_values[j]) {
-		  benefit_values[j] = tmp_bv;
-		  tagged_cols[j]= lower_idx[i];
-		  printf("\nbenefit_values Neuzuweisung (%f) Resultat aus: oben: %f    unten: %f   Intervalbreite: %f   tmp_bv: %f Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
-		}
-	      }
-	    }
-	  }
-	  if (branchmode==3) {
-	    if (do_determine_bv) {
-	      tmp_bv = Abs(intervalwidths[i]*s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)]);
-	      if (tmp_bv>benefit_values[j]) {
-		benefit_values[j] = tmp_bv;
-		tagged_cols[j]=upper_idx[i];
-		printf("\nbenefit_values Neuzuweisung (%f) Resultat aus: oben: %f    unten: %f   Intervalbreite: %f   tmp_bv: %f Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
-	      }
-	    } else {
-	      if (Abs(s_values_upper[ctrl_rows.at(j)])>Abs(s_values_lower[ctrl_rows.at(j)])) {
-		tmp_bv = Abs(intervalwidths[i]*s_values_upper[ctrl_rows.at(j)]);
-		if (tmp_bv>benefit_values[j]) {
-		  benefit_values[j] = tmp_bv;
-		  tagged_cols[j]= upper_idx[i];
-		  printf("\nbenefit_values Neuzuweisung (%f) Resultat aus: oben: %f    unten: %f   Intervalbreite: %f   tmp_bv: %f Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
-		}
-	      } else {
-		tmp_bv = Abs(intervalwidths[i]*s_values_lower[ctrl_rows.at(j)]);
-		if (tmp_bv>benefit_values[j]) {
-		  benefit_values[j] = tmp_bv;
-		  tagged_cols[j]= lower_idx[i];
-		  printf("\nbenefit_values Neuzuweisung (%f) Resultat aus: oben: %f    unten: %f   Intervalbreite: %f   tmp_bv: %f Spalte oben: %d Spalte unten: %d  .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],tmp_bv, upper_idx[i],lower_idx[i]);
-		}
-	      }
-	    }
-	  }
-	}
-      }// end of j for (control cycle)
-    } // end of sens size check
-  }// end of sensitivity cycling for
-
-
-  SmartPtr<const IteratesVector> curr = app->IpoptDataObject()->curr();
-
-  // get critical interval and parameter for all controls
-  Index tmp_idx=0;
-  std::vector<Index> crit_int(tagged_cols.size());
-  std::vector<Index> crit_par(tagged_cols.size());
-
-  for (int j=0; j<tagged_cols.size();j++) {
-    for (int i=0; i<parametersets.size();i++) {
-      parametersets[i].GetIndex(tmp_idx);
-      //            printf("\n\n aktuell untersuchter Index ist: %d\n\n",tmp_idx);
-      if (tmp_idx == tagged_cols[j]) {
-		// printf("\n\ncrit_int erst: %d\n\n",crit_int[j]);
-	parametersets[i].GetIntervalID(crit_int[j]);
-		// printf("\n\ncrit_int dann:: %d\n\n",crit_int[j]);
-		// printf("\n\ncrit_par erst: %d\n\n",crit_par[j]);
-	parametersets[i].GetParameterID(crit_par[j]);
-		// printf("\n\ncrit_par dann: %d\n\n",crit_par[j]);
-	i=parametersets.size();
-      }
-    }
-  }
-
-  //write gathered information into .dat file to access with python
-  std::string fname = "branch_intervals.dat";
-  std::ofstream branch_intervals;
-  branch_intervals.open(fname.c_str());
-  char buffer[63];
-  branch_intervals << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
-  for (int i=0;i<crit_int.size();i++) {
-    sprintf(buffer,"\nintervalID: %d parameter: %d\n",crit_int[i],crit_par[i]);
-    branch_intervals << buffer;
-  }
-  branch_intervals << "\n\n#end of file";
-  branch_intervals.close();
-
-  return 1;
+  return intervalwidths;
 }
 
 Number Abs(Number value)
@@ -575,3 +619,4 @@ Number Abs(Number value)
     retval = value;
   return retval;
 }
+
