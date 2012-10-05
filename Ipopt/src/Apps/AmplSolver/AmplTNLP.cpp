@@ -2038,9 +2038,10 @@ namespace Ipopt
 
   IntervalInfo::IntervalInfo() {}
 
-  IntervalInfo::IntervalInfo(const Index parameterID, const Index intervalID, const Index vector_index, const bool is_upper)
+  IntervalInfo::IntervalInfo(const Number value, const Index parameterID, const Index intervalID, const Index vector_index, const bool is_upper)
   {
 
+    value_ = value;
     parameterID_ = parameterID;
     intervalID_ = intervalID;
     index_ = vector_index;
@@ -2050,38 +2051,48 @@ namespace Ipopt
 
   IntervalInfo:: ~IntervalInfo() {}
 
-  void IntervalInfo::SetParameters(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
+  void IntervalInfo::setParameters(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
   {  }
 
-  void IntervalInfo::AddParameter(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
+  void IntervalInfo::addParameter(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
   {  }
 
-  void IntervalInfo::GetIndex(Index &index)
+  void IntervalInfo::getIndex(Index &index)
   {
     index = index_;
   }
 
-  void IntervalInfo::GetIntervalID(Index &nint)
+  void IntervalInfo::getValue(Number &value)
+  {
+    value = value_;
+  }
+
+  void IntervalInfo::setValue(Number value)
+  {
+    value_=value;
+  }
+
+  void IntervalInfo::getIntervalID(Index &nint)
   {
     nint = intervalID_;
   }
 
-  void IntervalInfo::GetParameterID(Index &paraID)
+  void IntervalInfo::getParameterID(Index &paraID)
   {
     paraID = parameterID_;
   }
 
-  bool IntervalInfo::IsUpper()
+  bool IntervalInfo::isUpper()
   {
     return is_upper_;
   }
 
-  void IntervalInfo::SetIntervals(const Index nint)
+  void IntervalInfo::setIntervals(const Index nint)
   {  }
 
-  void IntervalInfo::PrintSet()
+  void IntervalInfo::printSet()
   {
-    printf("\n parameterID: %d, intervalID: %d, index: %d, is_upper: %d \n", parameterID_, intervalID_, index_, is_upper_);
+    printf("\n value: %f parameterID: %d, intervalID: %d, index: %d, is_upper: %d \n", value_, parameterID_, intervalID_, index_, is_upper_);
   }
 
 
@@ -2089,6 +2100,7 @@ namespace Ipopt
 
   IntervalInfoSet::IntervalInfoSet(std::vector<IntervalInfo> intinfovec)
   {
+    valuevec_.clear();
     intinfovec_.clear();
     indexvec_.clear();
     parameterIDvec_.clear();
@@ -2101,15 +2113,15 @@ namespace Ipopt
 
     // sort algorithm to make sure entry indexing in IntervalInfoSet matches given indexing
     while (intinfovec_.size()<intinfovec.size()) {
-      intinfovec[i].GetIndex(tmp_index);
+      intinfovec[i].getIndex(tmp_index);
       if (tmp_index==indexvec_.size()) {
 	intinfovec_.push_back(intinfovec[i]);
 	indexvec_.push_back(tmp_index);
-	intinfovec[i].GetParameterID(tmp_paraID);
+	intinfovec[i].getParameterID(tmp_paraID);
 	parameterIDvec_.push_back(tmp_paraID);
-	intinfovec[i].GetIntervalID(tmp_intID);
+	intinfovec[i].getIntervalID(tmp_intID);
 	intervalIDvec_.push_back(tmp_intID);
-	is_uppervec_.push_back(intinfovec[i].IsUpper());
+	is_uppervec_.push_back(intinfovec[i].isUpper());
       }
       i++;
       if (i==intinfovec.size())
@@ -2118,79 +2130,151 @@ namespace Ipopt
 
   }
 
+  IntervalInfoSet::IntervalInfoSet(SmartPtr<const DenseVector> parameters)
+  {
+    valuevec_.clear();
+    intinfovec_.clear();
+    indexvec_.clear();
+    parameterIDvec_.clear();
+    intervalIDvec_.clear();
+    is_uppervec_.clear();
+    SmartPtr<const DenseVectorSpace> p_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(parameters->OwnerSpace()));
+
+    const std::vector<Index> intervalflags = p_space->GetIntegerMetaData("intervalID");
+    const std::vector<Index> parameterflags = p_space->GetIntegerMetaData("parameter");
+    const Index i_p = p_space->Dim();
+    // get parameter values
+    const Number* p_val = parameters->Values();
+    std::vector<Number> par_values(i_p);
+    /*std::copy(p_val, p_val+i_p,par_values);*/
+    for (int i=0;i<i_p;i++)
+      par_values[i] = *(p_val+i);
+    valuevec_ = par_values;
+    // ParameterSet is to contain all parameter/interval information
+    std::vector<IntervalInfo> parametersets;
+
+    IntervalInfo IntInfo;
+    const std::vector<Number> p_values = valuevec_;
+    Index* tmp_par = new Index;
+    Index* tmp_ID = new Index;
+    std::vector<bool> upperflags(i_p);
+
+    // search for parameterentries completing one set of parameters
+    for (int j =0; j< i_p; j++) {
+      *tmp_par = parameterflags[j];
+      *tmp_ID = intervalflags[j];
+      for (int k=j+1;k<i_p;k++) {
+	if (parameterflags[k] && intervalflags[k]) {
+	  if (*tmp_par == parameterflags[k] && *tmp_ID == intervalflags[k]) {
+	    upperflags[j] = (valuevec_[j]>valuevec_[k]);
+	    upperflags[k] = (!upperflags[j]);
+	    k = i_p;
+	  }
+	}
+      }
+      IntInfo = IntervalInfo(p_values[j],*tmp_par,*tmp_ID,j,upperflags[j]);
+      intinfovec_.push_back(IntInfo);
+      indexvec_.push_back(j);
+      parameterIDvec_.push_back(*tmp_par);
+      intervalIDvec_.push_back(*tmp_ID);
+      is_uppervec_.push_back(upperflags[j]);
+    }
+
+  }
+
   IntervalInfoSet::~IntervalInfoSet() {}
 
-  void IntervalInfoSet::SetIntInfoSet(std::vector<IntervalInfo> intinfovec)
+  void IntervalInfoSet::setIntInfoSet(std::vector<IntervalInfo> intinfovec)
   {
     intinfovec_=intinfovec;
   }
 
-  void IntervalInfoSet::GetIntInfoSet(std::vector<IntervalInfo> &intinfovec)
+  void IntervalInfoSet::getIntInfoSet(std::vector<IntervalInfo> &intinfovec)
   {
     intinfovec=intinfovec_;
   }
 
-  void IntervalInfoSet::GetIndexVec(std::vector<Index> &indexvec)
+  void IntervalInfoSet::getIndexVec(std::vector<Index> &indexvec)
   {
     indexvec=indexvec_;
   }
 
-  void IntervalInfoSet::GetIndex(Index intindex, Index &index)
+  void IntervalInfoSet::getIndex(Index intindex, Index &index)
   {
     if (intindex<indexvec_.size())
       index = indexvec_[intindex];
     else {
       index = -1;
-      printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::GetIndex() call with out of range index!\n");
+      printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::getIndex() call with out of range index!\n");
     }
   }
 
-  void IntervalInfoSet::GetIntervalIDVec(std::vector<Index> &intervalIDvec)
+  void IntervalInfoSet::getValueVec(std::vector<Number> &valuevec)
+  {
+    valuevec = valuevec_;
+  }
+
+  void IntervalInfoSet::getValue(Index intindex,Number &value)
+  {
+    intinfovec_[intindex].getValue(value);
+  }
+
+  void IntervalInfoSet::setValueVec(std::vector<Number> valuevec)
+  {
+    valuevec_ = valuevec;
+  }
+
+  void IntervalInfoSet::setValue(Index intindex,Number value)
+  {
+    intinfovec_[intindex].setValue(value);
+  }
+
+  void IntervalInfoSet::getIntervalIDVec(std::vector<Index> &intervalIDvec)
   {
     intervalIDvec = intervalIDvec_;
   }
 
-  void IntervalInfoSet::GetIntervalID(Index intindex, Index &intervalID)
+  void IntervalInfoSet::getIntervalID(Index intindex, Index &intervalID)
   {
     if (intindex<intervalIDvec_.size())
       intervalID = intervalIDvec_[intindex];
     else {
       intervalID = -1;
-      printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::GetIntervalID() call with out of range index!\n");
+      printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::getIntervalID() call with out of range index!\n");
     }
   }
 
-  void IntervalInfoSet::GetParameterIDVec(std::vector<Index> &parameterIDvec)
+  void IntervalInfoSet::getParameterIDVec(std::vector<Index> &parameterIDvec)
   {
     parameterIDvec = parameterIDvec_;
   }
 
-  void IntervalInfoSet::GetParameterID(Index paraindex, Index &parameterID)
+  void IntervalInfoSet::getParameterID(Index paraindex, Index &parameterID)
   {
     if (paraindex<parameterIDvec_.size())
       parameterID = parameterIDvec_[paraindex];
     else {
       parameterID = -1;
-      printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::GetParameterID() call with out of range index!\n");
+      printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::getParameterID() call with out of range index!\n");
     }
   }
 
-  void IntervalInfoSet::IsUpperVec(std::vector<bool> &is_uppervec)
+  void IntervalInfoSet::isUpperVec(std::vector<bool> &is_uppervec)
   {
     is_uppervec=is_uppervec_;
   }
 
-  bool IntervalInfoSet::IsUpper(Index isupperindex)
+  bool IntervalInfoSet::isUpper(Index isupperindex)
   {
     if (isupperindex<is_uppervec_.size())
       return is_uppervec_[isupperindex];
     else {
-     printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::IsUpper() call with out of range index!\n");
+     printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::isUpper() call with out of range index!\n");
      printf("\nsize of is_uppervec_: %d \n", is_uppervec_.size());
      return 0;
     }
   }
-  void IntervalInfoSet::GetOtherBndIdx(Index boundindex,Index &otherbndidx)
+  void IntervalInfoSet::getOtherBndIdx(Index boundindex,Index &otherbndidx)
   {
     for (int i=0;i<intinfovec_.size();i++){
       if (parameterIDvec_[int(boundindex)]==parameterIDvec_[i] && intervalIDvec_[int(boundindex)]==intervalIDvec_[i] && is_uppervec_[int(boundindex)]!=is_uppervec_[i]){
@@ -2200,7 +2284,7 @@ namespace Ipopt
     }
   }
 
-  void IntervalInfoSet::GetParameterCount(Index &paracount)
+  void IntervalInfoSet::getParameterCount(Index &paracount)
   {
     Index tmp_count =0;
     for (int i=0;i<parameterIDvec_.size();i++) {
@@ -2212,7 +2296,7 @@ namespace Ipopt
     paracount = tmp_count;
   }
 
-  void IntervalInfoSet::GetIntervalCount(Index &intervalcount)
+  void IntervalInfoSet::getIntervalCount(Index &intervalcount)
   {
     Index tmp_count= 0;
     for (int i=0;i<intervalIDvec_.size();i++) {
@@ -2224,11 +2308,11 @@ namespace Ipopt
     intervalcount = tmp_count;
   }
 
-  void IntervalInfoSet::PrintSet()
+  void IntervalInfoSet::printSet()
   {
     for (int i=0; i<intinfovec_.size();i++){
-      printf("\n\nIntervallInfoSet Eintrag %d:\n", i);
-      intinfovec_[i].PrintSet();
+      printf("\n\nIntervalInfoSet Eintrag %d:\n", i);
+      intinfovec_[i].printSet();
       printf("\n");
     }
   }

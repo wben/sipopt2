@@ -43,8 +43,7 @@ SmartPtr<Matrix> getSensitivityMatrix(SmartPtr<IpoptApplication> app);
 SmartPtr<Vector> getDirectionalDerivative(SmartPtr<IpoptApplication> app,
 					  SmartPtr<Matrix> sens_matrix);
 bool doIntervalization(SmartPtr<IpoptApplication> app);
-IntervalInfoSet GetIntInfoSet(SmartPtr<const DenseVector> parameters, const std::vector<std::string> par_names, std::vector<Number> par_values);
-std::vector<Number> GetIntervalWidths(IntervalInfoSet intervals,std::vector<Number> par_values, bool do_scaling=false);
+std::vector<Number> getIntervalWidths(IntervalInfoSet intervals, bool do_scaling=false);
 Number Abs(Number value);
 
 
@@ -285,18 +284,26 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   std::vector<Number> par_values(i_p);
   std::copy(p_val, p_val+i_p,&par_values[0]);
 
-  IntervalInfoSet intervals = GetIntInfoSet(p,par_names,par_values);
+  IntervalInfoSet intervals = IntervalInfoSet(p);
+  intervals.printSet();
+
+  std::vector<Number> testoutput;
+  intervals.getValueVec(testoutput);
+  printf("\ntestoutput.size() ist: %f\n",testoutput.size());
+  for (int i=0;i<testoutput.size();i++)
+    printf("\ntestoutput[%d] ist : %f\n",i,testoutput[i]);
+
   std::vector<Number> intervalwidths;
-  intervalwidths= GetIntervalWidths(intervals,par_values,do_scale_bc);
+  intervalwidths= getIntervalWidths(intervals,do_scale_bc);
 
   //cycle through intervalset to assign upper and lower value vector indexes to each other
   std::vector<Index> lower_idx(int(intervals.Size()/2));
   std::vector<Index> upper_idx(int(intervals.Size()/2));
   int tmp_j =0;
   for (Index i=0;i<intervals.Size();i=i+1) {
-    if (intervals.IsUpper(i)) {
-      intervals.GetIndex(i,upper_idx[tmp_j]);
-      intervals.GetOtherBndIdx(upper_idx[tmp_j],lower_idx[tmp_j]);
+    if (intervals.isUpper(i)) {
+      intervals.getIndex(i,upper_idx[tmp_j]);
+      intervals.getOtherBndIdx(upper_idx[tmp_j],lower_idx[tmp_j]);
       tmp_j++;
     }
   }
@@ -325,41 +332,38 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
 
       for (int j=0;j<ctrl_rows.size();j++) {
 	if (i==0) {
-	  if (branchmode<3) {
-	    if (do_determine_bv) {
+	  if (do_determine_bv) {
+	    if (branchmode<3)
 	      benefit_values[j]=s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)]*intervalwidths[i];
-	      tagged_cols[j]=upper_idx[i];
-	    } else {
-	      if (s_values_upper[ctrl_rows.at(j)]>s_values_lower[ctrl_rows.at(j)]) {
-		if (branchmode==1) {
-		  benefit_values[j]=s_values_upper[ctrl_rows.at(j)]*intervalwidths[i];
-		  tagged_cols[j]=upper_idx[i];
-		} else {
-		  benefit_values[j]=s_values_lower[ctrl_rows.at(j)]*intervalwidths[i];
-		  tagged_cols[j]=lower_idx[i];
-		}
+	    else
+  	      benefit_values[j]=Abs(s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)]*intervalwidths[i]);
+	    tagged_cols[j]=upper_idx[i];
+	  }
+	  if (branchmode<3) {
+	    if (s_values_upper[ctrl_rows.at(j)]>s_values_lower[ctrl_rows.at(j)]) {
+	      if (branchmode==1) {
+		benefit_values[j]=s_values_upper[ctrl_rows.at(j)]*intervalwidths[i];
+		tagged_cols[j]=upper_idx[i];
 	      } else {
-		if (branchmode==1) {
-		  benefit_values[j]=s_values_lower[ctrl_rows.at(j)]*intervalwidths[i];
-		  tagged_cols[j]=lower_idx[i];
-		} else {
-		  benefit_values[j]=s_values_upper[ctrl_rows.at(j)]*intervalwidths[i];
-		  tagged_cols[j]=upper_idx[i];
-		}
+		benefit_values[j]=s_values_lower[ctrl_rows.at(j)]*intervalwidths[i];
+		tagged_cols[j]=lower_idx[i];
+	      }
+	    } else {
+	      if (branchmode==1) {
+		benefit_values[j]=s_values_lower[ctrl_rows.at(j)]*intervalwidths[i];
+		tagged_cols[j]=lower_idx[i];
+	      } else {
+		benefit_values[j]=s_values_upper[ctrl_rows.at(j)]*intervalwidths[i];
+		tagged_cols[j]=upper_idx[i];
 	      }
 	    }
 	  } else { // branchmode==3, i==0
-	    if (do_determine_bv) {
-	      benefit_values[j]=Abs(s_values_upper[ctrl_rows.at(j)]*s_values_lower[ctrl_rows.at(j)]*intervalwidths[i]);
+	    if (Abs(s_values_upper[ctrl_rows.at(j)])>Abs(s_values_lower[ctrl_rows.at(j)])) {
+	      benefit_values[j]=Abs(s_values_upper[ctrl_rows.at(j)]*intervalwidths[i]);
 	      tagged_cols[j]=upper_idx[i];
 	    } else {
-	      if (Abs(s_values_upper[ctrl_rows.at(j)])>Abs(s_values_lower[ctrl_rows.at(j)])) {
-		benefit_values[j]=Abs(s_values_upper[ctrl_rows.at(j)]*intervalwidths[i]);
-		tagged_cols[j]=upper_idx[i];
-	      } else {
-		benefit_values[j]=Abs(s_values_lower[ctrl_rows.at(j)]*intervalwidths[i]);
-		tagged_cols[j]=lower_idx[i];
-	      }
+	      benefit_values[j]=Abs(s_values_lower[ctrl_rows.at(j)]*intervalwidths[i]);
+	      tagged_cols[j]=lower_idx[i];
 	    }
 	  }
 	  // printf("\nbenefit_values Erstzuweisung (%e). Resultat aus: oben: %e    unten: %e   Intervalbreite: %e Spalte Obergrenze: %d Spalte Untergrenze: %d .\n",benefit_values.at(j),s_values_upper[ctrl_rows.at(j)],s_values_lower[ctrl_rows.at(j)],intervalwidths[i],upper_idx[i],lower_idx[i]);
@@ -461,14 +465,14 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
 
   for (int j=0; j<tagged_cols.size();j++) {
     for (int i=0; i<i_p;i++) {
-      intervals.GetIndex(i,tmp_idx);
+      intervals.getIndex(i,tmp_idx);
       //            // printf("\n\n aktuell untersuchter Index ist: %d\n\n",tmp_idx);
       if (tmp_idx == tagged_cols[j]) {
 		// printf("\n\ncrit_int erst: %d\n\n",crit_int[j]);
-	intervals.GetIntervalID(i,crit_int[j]);
+	intervals.getIntervalID(i,crit_int[j]);
 		// printf("\n\ncrit_int dann:: %d\n\n",crit_int[j]);
 		// printf("\n\ncrit_par erst: %d\n\n",crit_par[j]);
-	intervals.GetParameterID(i,crit_par[j]);
+	intervals.getParameterID(i,crit_par[j]);
 		// printf("\n\ncrit_par dann: %d\n\n",crit_par[j]);
 	i=i_p;
       }
@@ -491,7 +495,7 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   return 1;
 }
 
-IntervalInfoSet GetIntInfoSet(SmartPtr<const DenseVector> parameters, const std::vector<std::string> par_names, std::vector<Number> par_values)
+IntervalInfoSet getIntInfoSet(SmartPtr<const DenseVector> parameters, const std::vector<std::string> par_names, std::vector<Number> par_values)
 {
   SmartPtr<const DenseVectorSpace> p_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(parameters->OwnerSpace()));
 
@@ -509,6 +513,7 @@ IntervalInfoSet GetIntInfoSet(SmartPtr<const DenseVector> parameters, const std:
   Index* tmp_ID = new Index;
   bool tmp_is_upper = 0;
   IntervalInfo IntInfo;
+  const std::vector<Number> p_values = par_values;
 
   // search for parameterentries completing one set of parameters
   for (int j =0; j< i_p; j++) {
@@ -519,9 +524,9 @@ IntervalInfoSet GetIntInfoSet(SmartPtr<const DenseVector> parameters, const std:
 	if (*tmp_par == parameterflags[k] && *tmp_ID == intervalflags[k]) {
 	  // add set to list of parametersets
 	  tmp_is_upper = (par_values[j]>par_values[k]);
-	  IntInfo = IntervalInfo(*tmp_par,*tmp_ID,j,tmp_is_upper);
+	  IntInfo = IntervalInfo(p_values[j],*tmp_par,*tmp_ID,j,tmp_is_upper);
 	  parametersets.push_back(IntInfo);
-	  IntInfo = IntervalInfo(*tmp_par,*tmp_ID,k,!tmp_is_upper);
+	  IntInfo = IntervalInfo(p_values[k],*tmp_par,*tmp_ID,k,!tmp_is_upper);
 	  parametersets.push_back(IntInfo);
 	  k = i_p;
 	}
@@ -532,19 +537,23 @@ IntervalInfoSet GetIntInfoSet(SmartPtr<const DenseVector> parameters, const std:
   return intervals;
 }
 
-std::vector<Number> GetIntervalWidths(IntervalInfoSet intervals,std::vector<Number> par_values, bool do_scaling)
+std::vector<Number> getIntervalWidths(IntervalInfoSet intervals,bool do_scaling)
 {
+
+  std::vector<Number> par_values;
+  intervals.getValueVec(par_values);
+
   std::vector<Number> intervalwidths(int(intervals.Size()/2));
   if (do_scaling) {
 
     std::vector<Index> intervalflags;
-    intervals.GetIntervalIDVec(intervalflags);
+    intervals.getIntervalIDVec(intervalflags);
     // printf("\nintervalflags.size() is: %d\n",intervalflags.size());
     //    for (int i=0;i<intervalflags.size();i++)
       // printf("\nintervalflags[%d] is: %d\n",i,intervalflags[i]);
 
     std::vector<Index> parameterflags;
-    intervals.GetParameterIDVec(parameterflags);
+    intervals.getParameterIDVec(parameterflags);
     // printf("\nparameterflags.size() is: %d\n",intervalflags.size());
     //    for (int i=0;i<parameterflags.size();i++)
       // printf("\nparameterflags[%d] is: %d\n",i,parameterflags[i]);
@@ -552,22 +561,23 @@ std::vector<Number> GetIntervalWidths(IntervalInfoSet intervals,std::vector<Numb
     Index* tmp_par = new Index;
 
     // determine total parameter intervalwidths
-    intervals.GetParameterCount(*tmp_par);
+    intervals.getParameterCount(*tmp_par);
     std::vector<Number> tmp_upper(*tmp_par);
     std::vector<Number> tmp_lower(*tmp_par);
     std::vector<bool> tmp_is_set(*tmp_par);
     for (int i=0;i<*tmp_par;i++) {
       tmp_is_set[i]=false;
     }
-
-    for (int j=0; j<parameterflags.size();j++) {
+    for (int i=0;i<par_values.size();i++)
+      printf("\npar_values[%d] ist: %f.\n",i,par_values[i]);
+    for (int j=0; j<intervals.Size();j++) {
       *tmp_par = parameterflags[j]-1;
       if (!tmp_is_set[*tmp_par]) {
 	tmp_upper[*tmp_par]= par_values[j];
 	tmp_lower[*tmp_par]= par_values[j];
 	tmp_is_set[*tmp_par]= true;
       } else {
-	if (intervals.IsUpper(j)) {
+	if (intervals.isUpper(j)) {
 	  if ((tmp_upper[*tmp_par])<par_values[j]) {
 	    tmp_upper[*tmp_par]=par_values[j];
 	  }
@@ -589,9 +599,9 @@ std::vector<Number> GetIntervalWidths(IntervalInfoSet intervals,std::vector<Numb
     std::vector<Index> upper_idx(int(intervals.Size()/2));
     int tmp_j =0;
     for (Index i=0;i<intervals.Size();i=i+1) {
-      if (intervals.IsUpper(i)) {
-	intervals.GetIndex(i,upper_idx[tmp_j]);
-	intervals.GetOtherBndIdx(upper_idx[tmp_j],lower_idx[tmp_j]);
+      if (intervals.isUpper(i)) {
+	intervals.getIndex(i,upper_idx[tmp_j]);
+	intervals.getOtherBndIdx(upper_idx[tmp_j],lower_idx[tmp_j]);
 	tmp_j++;
       }
     }
@@ -599,7 +609,7 @@ std::vector<Number> GetIntervalWidths(IntervalInfoSet intervals,std::vector<Numb
     // determine intervalwidths for each parametervalue - the index of the intervalwidth stored here matches the one of the parameterdata in IntervalInfoSet intervals
 
     for (Index i=0;i<intervalwidths.size();i++) {
-      intervals.GetParameterID(upper_idx[i],*tmp_par);
+      intervals.getParameterID(upper_idx[i],*tmp_par);
       intervalwidths[i]=(par_values[upper_idx.at(i)]-par_values[lower_idx.at(i)])/total_int_widths[*tmp_par-1];
       // printf("\n skalierte Intervalbreite %d für Parameter %d beträgt: %f\n",i,*tmp_par,intervalwidths[i]);
     }

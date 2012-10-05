@@ -141,14 +141,14 @@ class AmplSet:
         """read control sensitivity data and split specified interval """
         for ir in range(nruns):
             # common output tags: bmX with X as branchmode setting, s0/1 for no/scaling, bv0/1 for no/benfit value usage
-            output_f = open(str(self.q)+'_loop_bm'+str(self.branchmode)+'_s'+str(self.scaling)+'_bv'+str(self.benefits)+'_'+str(ir)+'.txt', 'w')
+            output_f = open(str(self.q)+'_lop_bm'+str(self.branchmode)+'_s'+str(self.scaling)+'_bv'+str(self.benefits)+'_'+str(ir)+'.txt', 'w')
             self.call_ampl(output_file_handle=output_f)
             output_f.close()
             branch_file_handle = 'branch_intervals.dat'
             (nint,npar)=self.read_branch(branch_file_handle)
             for (i,p) in zip(nint,npar):
                 self.split(i,p)
-            self.plot(dim=[0,1], filename=str(self.q)+'_loopplot_bm'+str(self.branchmode)+'_s'+str(self.scaling)+'_bv'+str(self.benefits)+'_'+str(ir)+'.png')
+            self.plot(dim=[0,1], filename=str(self.q)+'_lopplot_bm'+str(self.branchmode)+'_s'+str(self.scaling)+'_bv'+str(self.benefits)+'_'+str(ir)+'.png')
 
     def read_branch(self,fname):
         """
@@ -184,19 +184,20 @@ class AmplSet:
             plt.savefig(filename)
 
 def run():
-    for q,(pLvalues,pUvalues) in enumerate([([0.3,0.3],[1.7,1.7])]): #,([0.2,0.2],[1.8,1.8]),([0.1,0.1],[1.9,1.9])]):
+    for q,(pLvalues,pUvalues) in enumerate([([0.3,0.3],[1.7,1.7])]):#, ([0.2,0.2],[1.8,1.8]),([0.1,0.1],[1.9,1.9])]):
 
-        for (bm,sc,bv) in [(3,2,2)]: #(2,2,2),(3,2,1)
-      #  for sc in [1,2]:
-       #     for bv in  [1,2]:
-            ampl_script = 'autorandomintervals.run'
-            pLnames = ['p1L', 'p2L']
-            pUnames = ['p1U', 'p2U']
+#        for (bm,sc,bv) in [(3,2,2),(2,2,2),(3,2,1)]:
+        for bm in [2]:
+            for sc in [2]:
+                for bv in  [2]:
+                    ampl_script = 'autorandomintervals.run'
+                    pLnames = ['p1L', 'p2L']
+                    pUnames = ['p1U', 'p2U']
  #       pLvalues = [0.3, 0.3]
  #       pUvalues = [1.8, 1.8]
-            info = AmplSet(ampl_script, pLnames, pUnames, pLvalues, pUvalues,bm,sc,bv,q)
+                    info = AmplSet(ampl_script, pLnames, pUnames, pLvalues, pUvalues,bm,sc,bv,q)
     #info.randomize(2)
-            info.branch_controlwise(3)
+                    info.branch_controlwise(5)
 
 if __name__=='__main__':
     run()

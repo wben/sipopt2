@@ -587,6 +587,36 @@ namespace Ipopt
       "If selected, the algorithm will print the list of all available "
       "algorithmic options with some documentation before solving the "
       "optimization problem.");
+    //////////////////////////////////////////////////////////////////////////////////////////////
+    roptions->AddStringOption4(
+      "branchmode",
+      "Criterion used for determination of to be branched interval.",
+      "smallest",
+      "smallest", "smallest value interval is branched",
+      "largest", "largest value interval is branched",
+      "abs_largest", "largest absolute value interval is branched",
+      "random", "randomly pick parameter and "
+      "The algorithm will decide which intervals and parameters to branch "
+      "checking the attribute determined by the branchmode setting. The "
+      "values compared can be either interval bound values, scalar "
+      "product style benefit values or any other Number type value.");
+    roptions->AddStringOption2(
+      "scalingmode",
+      "Chose whether and/or how to scale branch criterion values.",
+      "none",
+      "none", "disable scaling",
+      "total_interval_widths", "scale interval values with respect to total interval width",
+      "Chose whether and/or how to scale branch criterion values.");
+    roptions->AddStringOption2(
+      "branchvalue",
+      "Determine kind of value to evaluate branching criteria.",
+      "bound",
+      "bound", "check interval bounds seperately",
+      "product", "multiply interval bound values mutually",
+      "The branch algorithm will calculate the kind of value "
+      "determined here to check the branching criterion "
+      "specified in option \"branchmode\". ");
+    //////////////////////////////////////////////////////////////////////////////////////////////
 
 #if COIN_IPOPT_VERBOSITY > 0
 
