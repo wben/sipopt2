@@ -600,12 +600,13 @@ namespace Ipopt
       "checking the attribute determined by the branchmode setting. The "
       "values compared can be either interval bound values, scalar "
       "product style benefit values or any other Number type value.");
-    roptions->AddStringOption2(
+    roptions->AddStringOption3(
       "scalingmode",
       "Chose whether and/or how to scale branch criterion values.",
       "none",
       "none", "disable scaling",
-      "total_interval_widths", "scale interval values with respect to total interval width",
+      "total_interval_widths", "scale interval values with respect to relative interval width",
+      "interval_widths", "scale interval values with respect to single actual interval width"
       "Chose whether and/or how to scale branch criterion values.");
     roptions->AddStringOption2(
       "branchvalue",
