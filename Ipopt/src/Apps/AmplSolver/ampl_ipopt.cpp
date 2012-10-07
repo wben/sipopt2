@@ -87,6 +87,7 @@ public:
   void getIntervalIDs(std::vector<Index>&intervalIDs);
   void getParameterIDVec (std::vector<Index> &parameterIDvec);
   void getParameterID(Index paraindex, Index &parameterID);
+  void getParameterIDs(std::vector<Index> &parameterIDs);
   void isUpperVec(std::vector<bool> &is_uppervec);
   bool isUpper(Index isupperindex);
   void getOtherBndIdx(Index boundindex,Index &otherbndidx);
@@ -149,7 +150,7 @@ class BranchingCriterion
 {
 public:
   virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app) = 0;
-  virtual SplitChoice branchInterval(Index intervalID,SmartPtr<IpoptApplication> app) = 0;
+  virtual SplitChoice branchInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app) = 0;
 };
 
 BranchingCriterion* assignBranchingMethod(SmartPtr<OptionsList> options);
@@ -158,47 +159,47 @@ class RandomBranching : public BranchingCriterion
 {
 public:
   virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app);
-  virtual SplitChoice branchInterval(Index intervalID,SmartPtr<IpoptApplication> app);
+  virtual SplitChoice branchInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app);
 };
 
 class LargerBranching : public BranchingCriterion
 {
 public:
   virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app);
-  virtual SplitChoice branchInterval(Index intervalID,SmartPtr<IpoptApplication> app);
+  virtual SplitChoice branchInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app);
 };
 
 class SmallerBranching : public BranchingCriterion
 {
 public:
   virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app);
-  virtual SplitChoice branchInterval(Index intervalID,SmartPtr<IpoptApplication> app);
+  virtual SplitChoice branchInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app);
 };
 
 class AbsoluteLargerBranching : public BranchingCriterion
 {
 public:
   virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app);
-  virtual SplitChoice branchInterval(Index intervalID,SmartPtr<IpoptApplication> app);
+  virtual SplitChoice branchInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app);
 };
 
 class Intervaluation
 {
 public:
-  virtual SplitChoice intervaluateInterval(Index intervalID,SmartPtr<IpoptApplication> app) = 0;
+  virtual SplitChoice intervaluateInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app) = 0;
 };
 Intervaluation* assignIntervaluationMethod(SmartPtr<OptionsList> options);
 
 class OneBoundIntervaluation : public Intervaluation
 {
 public:
-  SplitChoice intervaluateInterval(Index intervalID,SmartPtr<IpoptApplication> app);
+  SplitChoice intervaluateInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app);
 };
 
 class BothBoundIntervaluation : public Intervaluation
 {
 public:
-  SplitChoice intervaluateInterval(Index intervalID,SmartPtr<IpoptApplication> app);
+  SplitChoice intervaluateInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app);
 };
 
 class ControlSelector
@@ -210,7 +211,7 @@ public:
 class SelectFirstControl : public ControlSelector
 {
 public:
-  virtual SplitDecision decideSplitControl(std::vector<SplitChoice> choices);
+  SplitDecision decideSplitControl(std::vector<SplitChoice> choices);
 };
 
 ControlSelector* assignControlMethod(SmartPtr<OptionsList> options);
@@ -432,12 +433,12 @@ void IntervalInfoSet::getIntervalID(Index intindex, Index &intervalID)
     printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::getIntervalID() call with out of range index!\n");
   }
 }
+
 void IntervalInfoSet::getIntervalIDs(std::vector<Index>&intervalIDs)
 {
   std::vector<Index> tmp_IDs;
   Index* tmp_new_ID = new Index;
-  Index* tmp_ID = new Index;
-  *tmp_ID = intervalIDvec_[0];
+  Index* tmp_ID = NULL;
   *tmp_new_ID = intervalIDvec_[0];
   // assign first value
   for (int i=0;i<intervalIDvec_.size();i++) {
@@ -445,17 +446,42 @@ void IntervalInfoSet::getIntervalIDs(std::vector<Index>&intervalIDs)
       *tmp_new_ID=intervalIDvec_[i];
   }
   tmp_IDs.push_back(*tmp_new_ID);
-  *tmp_ID = tmp_IDs[0];
-  *tmp_new_ID = *tmp_ID +1;
-  while (*tmp_ID!=*tmp_new_ID) {
+  while (tmp_ID!=tmp_new_ID) {
+    tmp_ID = tmp_new_ID;
     for (int i=0;i<intervalIDvec_.size();i++) {
-      if (intervalIDvec_[i]>*tmp_ID && intervalIDvec_[i]<*tmp_new_ID)
+      if (intervalIDvec_[i]>*tmp_ID && tmp_ID==tmp_new_ID)
 	*tmp_new_ID=intervalIDvec_[i];
+      else if (intervalIDvec_[i]>*tmp_ID && intervalIDvec_[i]<*tmp_new_ID)
+	*tmp_new_ID = intervalIDvec_[i];
     }
     tmp_IDs.push_back(*tmp_new_ID);
-    *tmp_ID = *tmp_new_ID;
   }
+  intervalIDs = tmp_IDs;
+}
 
+void IntervalInfoSet::getParameterIDs(std::vector<Index>&parameterIDs)
+{
+  std::vector<Index> tmp_IDs;
+  Index* tmp_new_ID = new Index;
+  Index* tmp_ID = NULL;
+  *tmp_new_ID = parameterIDvec_[0];
+  // assign first value
+  for (int i=0;i<parameterIDvec_.size();i++) {
+    if (parameterIDvec_[i]<*tmp_new_ID)
+      *tmp_new_ID=parameterIDvec_[i];
+  }
+  tmp_IDs.push_back(*tmp_new_ID);
+  while (tmp_ID!=tmp_new_ID) {
+    tmp_ID = tmp_new_ID;
+    for (int i=0;i<parameterIDvec_.size();i++) {
+      if (parameterIDvec_[i]>*tmp_ID && tmp_ID==tmp_new_ID)
+	*tmp_new_ID=parameterIDvec_[i];
+      else if (parameterIDvec_[i]>*tmp_ID && parameterIDvec_[i]<*tmp_new_ID)
+	*tmp_new_ID = parameterIDvec_[i];
+    }
+    tmp_IDs.push_back(*tmp_new_ID);
+  }
+  parameterIDs = tmp_IDs;
 }
 
 void IntervalInfoSet::getParameterIDVec(std::vector<Index> &parameterIDvec)
@@ -729,7 +755,7 @@ std::vector<SplitChoice> RandomBranching::branchSensitivityMatrix(SmartPtr<Ipopt
 
 }
 
-SplitChoice RandomBranching::branchInterval(Index intervalID, SmartPtr<IpoptApplication> app)
+SplitChoice RandomBranching::branchInterval(Index controlrow, Index intervalID, SmartPtr<IpoptApplication> app)
 {
 
 }
@@ -739,7 +765,7 @@ std::vector<SplitChoice>  LargerBranching::branchSensitivityMatrix(SmartPtr<Ipop
 
 }
 
-SplitChoice LargerBranching::branchInterval(Index intervalID, SmartPtr<IpoptApplication> app)
+SplitChoice LargerBranching::branchInterval(Index controlrow, Index intervalID, SmartPtr<IpoptApplication> app)
 {
 
 }
@@ -747,7 +773,6 @@ SplitChoice LargerBranching::branchInterval(Index intervalID, SmartPtr<IpoptAppl
 std::vector<SplitChoice> SmallerBranching::branchSensitivityMatrix(SmartPtr<IpoptApplication> app)
 {
   SmartPtr<OptionsList> options = app->Options();
-  Intervaluation* intervaluate = assignIntervaluationMethod(options);
   SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
   SmartPtr<MultiVectorMatrix> mv_sens = dynamic_cast<MultiVectorMatrix*>(GetRawPtr(sens_matrix));
 
@@ -773,9 +798,9 @@ std::vector<SplitChoice> SmallerBranching::branchSensitivityMatrix(SmartPtr<Ipop
   */
 
   IntervalInfoSet intervals = IntervalInfoSet(p);
-  // get parameter values
+  /*  // get parameter values
   std::vector<Number> par_values;
-  intervals.getValueVec(par_values)
+  intervals.getValueVec(par_values); */
   std::vector<Number> intervalwidths;
   IntervalWidthScaling* scalingmode = assignScalingMethod(options);
   scalingmode->scaleIntervalWidths(intervals,intervalwidths);
@@ -789,16 +814,19 @@ std::vector<SplitChoice> SmallerBranching::branchSensitivityMatrix(SmartPtr<Ipop
       ctrl_rows.push_back(i);
     //  // printf("\ndx/dp MetaData: intervalID an der Stelle %d hat den Wert %d.\n", i, var_int_flags[i]);
   }
+  std::vector<SplitChoice> retval;
+  std::vector<Index> interval_IDs;
 
-  Index intervalcount;
-  intervals.getIntervalCount(intervalcount);
-  for (Index i=0;i<intervalcount;i++) {
-
-
-
-
-
-
+  intervals.getIntervalIDs(interval_IDs);
+  SplitChoice tmp_split_choice;
+  Intervaluation* intervaluater = assignIntervaluationMethod(options);
+  for (Index i=0;i<ctrl_rows.size();i++) {
+    retval.push_back(intervaluater.intervaluateInterval(ctrl_rows[i],interval_IDs[0],app));
+    for (Index j=0;j<interval_IDs.size();j++) {
+      tmp_split_choice = intervaluater.intervaluateInterval(ctrl_rows[i],interval_IDs[0],app);
+      if (tmp_split_choice.reason_value<retval[i].reason_value)
+	retval[i] = tmp_split_choice;
+    }
   }
 
 
@@ -812,7 +840,7 @@ std::vector<SplitChoice> SmallerBranching::branchSensitivityMatrix(SmartPtr<Ipop
 
 
 
-
+  /*
   //cycle through intervalset to assign upper and lower value vector indexes to each other
   std::vector<Index> lower_idx(int(intervals.Size()/2));
   std::vector<Index> upper_idx(int(intervals.Size()/2));
@@ -965,10 +993,10 @@ std::vector<SplitChoice> SmallerBranching::branchSensitivityMatrix(SmartPtr<Ipop
       }// end of j for (control cycle)
     } // end of sens size check
   }// end of sensitivity cycling for
-
+  */
 }
 
-SplitChoice SmallerBranching::branchInterval(Index intervalID, SmartPtr<IpoptApplication> app)
+SplitChoice SmallerBranching::branchInterval(Index controlrow, Index intervalID, SmartPtr<IpoptApplication> app)
 {
 
 }
@@ -978,7 +1006,7 @@ std::vector<SplitChoice> AbsoluteLargerBranching::branchSensitivityMatrix(SmartP
 
 }
 
-SplitChoice AbsoluteLargerBranching::branchInterval(Index intervalID, SmartPtr<IpoptApplication> app)
+SplitChoice AbsoluteLargerBranching::branchInterval(Index controlrow, Index intervalID, SmartPtr<IpoptApplication> app)
 {
 
 }
@@ -999,17 +1027,60 @@ Intervaluation* assignIntervaluationMethod(SmartPtr<OptionsList> options)
 
 }
 
-SplitChoice OneBoundIntervaluation::intervaluateInterval(Index intervalID,SmartPtr<IpoptApplication> app)
+SplitChoice OneBoundIntervaluation::intervaluateInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app)
 {
 
 }
 
-SplitChoice BothBoundIntervaluation::intervaluateInterval(Index intervalID,SmartPtr<IpoptApplication> app)
+SplitChoice BothBoundIntervaluation::intervaluateInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app)
 {
+  SplitChoice retval;
+  SmartPtr<OptionsList> app->options();
+  BranchingCriterion* int_brancher = assignBranchingMethod(options);
+  SmartPtr<IpoptNLP> ipopt_nlp = app->IpoptNLPObject();
+  SmartPtr<OrigIpoptNLP> orig_nlp = dynamic_cast<OrigIpoptNLP*>(GetRawPtr(ipopt_nlp));
+  SmartPtr<const DenseVector> p = dynamic_cast<const DenseVector*>(GetRawPtr(orig_nlp->p()));
+  SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
+  SmartPtr<MultiVectorMatrix> mv_sens = dynamic_cast<MultiVectorMatrix*>(GetRawPtr(sens_matrix));
+  const Index nrows = mv_sens->NRows();
 
+  std::vector<Number> tmp_s_values(nrows);
+  const Number* s_val = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(lower_idx[i])))->Values();
+  std::copy(s_val, s_val+nrows,&s_values_lower[0]);
+
+  IntervalInfoSet intervals = IntervalInfoSet(p);
+  std::vector<Number> p_values;
+  intervals.getValueVec(p_values);
+  std::vector<Index> ID_vec;
+  intervals.getIntervalIDVec(ID_vec);
+  std::vector<Index> para_vec;
+  intervals.getParameterIDVec(para_vec);
+  Index npars;
+  std::vector<SplitChoice> int_splitchoices(npars);
+  intervals.getParameterCount(npars);
+  std::vector<Index> parameterIDs;
+  Number tmp_value;
+  Index tmp_idx;
+
+  intervals.getParameterIDs(parameterIDs);
+  for (int i=0; i<parameterIDs.size();i++) {
+    int_splitchoices[i].parameterID = parameterIDs[i];
+    int_splitchoices[i].intervalID = intervalID;
+    int j=0;
+    while (ID_vec[j]!=intervalID || para_vec[j]!=parameterIDs[i]) {
+      j++;
+      if (ID_vec[j]==intervalID && para_vec[j]==parameterIDs[i]) {
+	tmp_value = p_values[j];
+	intervals.getOtherBndIdx(j,tmp_idx);
+	int_splitchoices[i].reason_value = tmp_value*p_values[tmp_idx];
+      }
+    }
+  }
+  retval = int_brancher->branch_interval(int_splitchoices);
+  return retval;
 }
 
-virtual SplitDecision SelectFirstControl::decideControlMethod(std::vector<SplitChoice> choices)
+SplitDecision SelectFirstControl::decideSplitControl(std::vector<SplitChoice> choices)
 {
   SplitDecision retval;
   retval.intervalID = choices[0].intervalID;
@@ -1210,7 +1281,7 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   if (IsValid(delta_s)) {
     //    delta_s->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "delta_s");
   }
-  SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
+
   SmartPtr<MultiVectorMatrix> mv_sens = dynamic_cast<MultiVectorMatrix*>(GetRawPtr(sens_matrix));
 
   const Index nrows = mv_sens->NRows();
@@ -1225,23 +1296,6 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
 
   SmartPtr<const DenseVector> p = dynamic_cast<const DenseVector*>(GetRawPtr(orig_nlp->p()));
   SmartPtr<const DenseVectorSpace> p_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(p->OwnerSpace()));
-
-  // decision variable to determine branching criterion:
-  // 1 is strictly greater than, 2 is strictly smaller than, 3 is absolute value str.ly greater than
-  Index branchmode = p_space->GetIntegerMetaData("branchmode")[0];
-  // printf("\nbranchmode is %d \n", branchmode);
-
-
-
-  // decision variable to enable benefit value branch descision instead of simple sensitivity based decision
-  // benefit value is the (scalar) product of sensitivities of both boundaries of an interval
-  bool do_determine_bv = false;
-  if (p_space->GetIntegerMetaData("benefit_value")[0]==2)
-    do_determine_bv = true;
-  //    if (do_determine_bv)
-  // printf("\nbenefit value calculation is enabled\n");
-  //    else
-  // printf("\nbenefit value calculation is disabled\n");
 
   // get parameter names
   const std::vector<std::string> parnames = p_space->GetStringMetaData("idx_names");
@@ -1291,7 +1345,7 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   std::vector<Index> tagged_cols(ctrl_rows.size());
 
   //cycle through lower/upper indexes and store the value relevant to current branching options
-  for (int i =0;i<lower_idx.size();i++) {
+  /*  for (int i =0;i<lower_idx.size();i++) {
     if (ctrl_rows.size()) {
       // get concrete sensitivity values
       std::vector<Number> s_values_lower(nrows);
@@ -1427,7 +1481,7 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
       }// end of j for (control cycle)
     } // end of sens size check
   }// end of sensitivity cycling for
-
+  */
   std::string branch_mode;
   if (options->GetStringValue("branchmode",branch_mode ,""))
     printf("\nbranch_mode is set to %s\n",branch_mode.c_str());
