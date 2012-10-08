@@ -87,10 +87,6 @@ class AmplSet:
 
         for k, iv in enumerate(self.intervals):
             for nameL, pL, nameU, pU in zip(self.pLnames, iv.pL, self.pUnames, iv.pU):
-                if k == 0:
-                    f.write('let {}[{}].branchmode := {};\n'.format(nameL,k+1,self.branchmode))
-                    f.write('let {}[{}].scaling := {};\n'.format(nameL,k+1,self.scaling))
-                    f.write('let {}[{}].benefit_value := {};\n'.format(nameL,k+1,self.benefits))
                 f.write('let {}[{}] := {};\n'.format(nameL, k+1, pL))
                 f.write('let {}[{}] := {};\n'.format(nameU, k+1, pU))
         f.write('\n\n#end of file');
@@ -197,7 +193,7 @@ def run():
  #       pUvalues = [1.8, 1.8]
                     info = AmplSet(ampl_script, pLnames, pUnames, pLvalues, pUvalues,bm,sc,bv,q)
     #info.randomize(2)
-                    info.branch_controlwise(5)
+                    info.branch_controlwise(15)
 
 if __name__=='__main__':
     run()
