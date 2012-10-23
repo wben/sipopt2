@@ -597,33 +597,6 @@ namespace Ipopt
       para_integer_md_["parameter"] = parameter_vec;
       }
 
-    const Index* branchmode = suffix_handler_->GetIntegerSuffixValues("branchmode", AmplSuffixHandler::Variable_Source);
-    if (np>0 && branchmode) {
-      std::vector<int> branchmode_vec(np);
-      for (int k=0; k<np; ++k) {
-        branchmode_vec[k] = branchmode[para_x_[k]];
-      }
-      para_integer_md_["branchmode"] = branchmode_vec;
-      }
-
-    const Index* scaling = suffix_handler_->GetIntegerSuffixValues("scaling", AmplSuffixHandler::Variable_Source);
-    if (np>0 && scaling) {
-      std::vector<int> scaling_vec(np);
-      for (int k=0; k<np; ++k) {
-        scaling_vec[k] = scaling[para_x_[k]];
-      }
-      para_integer_md_["scaling"] = scaling_vec;
-      }
-
-    const Index* benefit_value = suffix_handler_->GetIntegerSuffixValues("benefit_value", AmplSuffixHandler::Variable_Source);
-    if (np>0 && benefit_value) {
-      std::vector<int> benefit_value_vec(np);
-      for (int k=0; k<np; ++k) {
-        benefit_value_vec[k] = benefit_value[para_x_[k]];
-      }
-      para_integer_md_["benefit_value"] = benefit_value_vec;
-      }
-
 
     if (var_string_md_.size() > 0 || var_integer_md_.size() > 0 || var_numeric_md_.size() > 0
         || para_string_md_.size() > 0 || para_integer_md_.size() > 0 || para_numeric_md_.size() > 0

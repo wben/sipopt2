@@ -23,4 +23,4 @@ option sipopt_auxfiles rc;
 include parameterresults.inc;
 solve;
 
-display time, xCU;
+display time, xCU, xBmin;

@@ -46,18 +46,18 @@ class IntervalInfo : public ReferencedObject
 {
 public:
   IntervalInfo();
-  IntervalInfo(const Number value, const Index parameterID, const Index intervalID, const Index vector_index, const bool is_upper);
+  IntervalInfo(const Number& value, const Index& parameterID, const Index& intervalID, const Index& vector_index, const bool& is_upper);
   ~IntervalInfo();
-  void setParameters(const std::vector<std::string> pnames, const std::vector<Number> pvalues);
-  void addParameter(const std::vector<std::string> pnames, const std::vector<Number> pvalues);
-  void getIndex(Index &index);
-  void getValue(Number &value);
-  void setValue(Number value);
-  void getIntervalID (Index &nint);
-  void getParameterID (Index &paraID);
-  bool isUpper();
-  void setIntervals(const Index nint);
-  void printSet();
+  void setParameters(const std::vector<std::string>& pnames, const std::vector<Number>& pvalues);
+  void addParameter(const std::vector<std::string>& pnames, const std::vector<Number>& pvalues);
+  Index getIndex() const;
+  Number getValue() const;
+  void setValue(const Number &value);
+  Index getIntervalID() const;
+  Index getParameterID() const;
+  bool isUpper() const;
+  void setInterval(const Index& nint);
+  void printSet() const;
 
 private:
   Number value_;
@@ -72,30 +72,30 @@ class IntervalInfoSet
 {
 public:
 
-  IntervalInfoSet(std::vector<IntervalInfo> intinfovec);
+  IntervalInfoSet(const std::vector<IntervalInfo>& intinfovec);
   IntervalInfoSet(SmartPtr<const DenseVector> parameters);
   ~IntervalInfoSet();
-  void setIntInfoSet(std::vector<IntervalInfo> intinfovec);
-  void getIntInfoSet(std::vector<IntervalInfo> &intinfovec);
-  void getIndexVec(std::vector<Index> &indexvec);
-  void getIndex(Index intindex, Index &index);
-  void getValueVec(std::vector<Number> &valuevec);
-  void getValue(Index intindex, Number &value);
-  void setValueVec(std::vector<Number> valuevec);
-  void setValue(Index intindex, Number value);
-  void getIntervalIDVec (std::vector<Index> &nintvec);
-  void getIntervalID(Index intindex, Index &intervalID);
-  void getIntervalIDs(std::vector<Index>&intervalIDs);
-  void getParameterIDVec (std::vector<Index> &parameterIDvec);
-  void getParameterID(Index paraindex, Index &parameterID);
-  void getParameterIDs(std::vector<Index> &parameterIDs);
-  void isUpperVec(std::vector<bool> &is_uppervec);
-  bool isUpper(Index isupperindex);
-  void getOtherBndIdx(Index boundindex,Index &otherbndidx);
-  void getParameterCount(Index &paracount);
-  void getIntervalCount(Index &intervalcount);
-  void printSet();
-  Index Size();
+  void setIntInfoSet(const std::vector<IntervalInfo> &intinfovec);
+  std::vector<IntervalInfo> getIntInfoSet() const;
+  std::vector<Index> getIndexVec() const;
+  Index getIndex(const Index& intindex) const;
+  std::vector<Number> getValueVec() const;
+  Number getValue(const Index& intindex) const;
+  void setValueVec(const std::vector<Number>& valuevec);
+  void setValue(const Index& intindex, const Number& value);
+  std::vector<Index> getIntervalIDVec () const;
+  Index getIntervalID(const Index& intindex) const;
+  std::vector<Index> getIntervalIDs() const;
+  std::vector<Index> getParameterIDVec() const;
+  Index getParameterID(const Index& paraindex) const;
+  std::vector<Index> getParameterIDs() const;
+  std::vector<bool> isUpperVec() const;
+  bool isUpper(const Index& isupperindex) const;
+  Index getOtherBndIdx(const Index& boundindex) const;
+  Index getParameterCount() const;
+  Index getIntervalCount() const;
+  void printSet() const;
+  Index Size() const;
 
 private:
   IntervalInfoSet();
@@ -112,26 +112,26 @@ private:
 class IntervalWidthScaling
 {
 public:
-  virtual std::vector<Number> scaleIntervalWidths(IntervalInfoSet intervals,Index intervalID) = 0;
+  virtual std::vector<Number> scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID) const = 0;
 };
 IntervalWidthScaling* assignScalingMethod(SmartPtr<OptionsList> options);
 
 class NoScaling : public IntervalWidthScaling
 {
 public:
-  virtual std::vector<Number> scaleIntervalWidths(IntervalInfoSet intervals,Index intervalID);
+  virtual std::vector<Number> scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID)const;
 };
 
 class TotIntWidthScaling : public IntervalWidthScaling
 {
 public:
-  virtual std::vector<Number> scaleIntervalWidths(IntervalInfoSet intervals,Index intervalID);
+  virtual std::vector<Number> scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID)const;
 };
 
 class IntWidthScaling : public IntervalWidthScaling
 {
 public:
-  virtual std::vector<Number> scaleIntervalWidths(IntervalInfoSet intervals,Index intervalID);
+  virtual std::vector<Number> scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID)const;
 };
 
 struct SplitChoice
@@ -150,8 +150,8 @@ struct SplitDecision
 class BranchingCriterion
 {
 public:
-  virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app) = 0;
-  virtual SplitChoice branchInterval(std::vector<SplitChoice> splitchoices) = 0;
+  virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app) const = 0;
+  virtual SplitChoice branchInterval(const std::vector<SplitChoice>& splitchoices) const = 0;
 };
 
 BranchingCriterion* assignBranchingMethod(SmartPtr<OptionsList> options);
@@ -159,77 +159,93 @@ BranchingCriterion* assignBranchingMethod(SmartPtr<OptionsList> options);
 class RandomBranching : public BranchingCriterion
 {
 public:
-  virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app);
-  virtual SplitChoice branchInterval(std::vector<SplitChoice> splitchoices);
+  virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app) const;
+  virtual SplitChoice branchInterval(const std::vector<SplitChoice>& splitchoices) const;
 };
 
 class LargerBranching : public BranchingCriterion
 {
 public:
-  virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app);
-  virtual SplitChoice branchInterval(std::vector<SplitChoice> splitchoices);
+  virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app) const;
+  virtual SplitChoice branchInterval(const std::vector<SplitChoice>& splitchoices) const;
 };
 
 class SmallerBranching : public BranchingCriterion
 {
 public:
-  virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app);
-  virtual SplitChoice branchInterval(std::vector<SplitChoice> splitchoices);
+  virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app) const;
+  virtual SplitChoice branchInterval(const std::vector<SplitChoice>& splitchoices) const;
 };
 
 class AbsoluteLargerBranching : public BranchingCriterion
 {
 public:
-  virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app);
-  virtual SplitChoice branchInterval(std::vector<SplitChoice> splitchoices);
+  virtual std::vector<SplitChoice> branchSensitivityMatrix(SmartPtr<IpoptApplication> app) const;
+  virtual SplitChoice branchInterval(const std::vector<SplitChoice>& splitchoices) const;
 };
 
 class Intervaluation
 {
 public:
-  virtual SplitChoice intervaluateInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app) = 0;
+  virtual SplitChoice intervaluateInterval(const Index& controlrow, const Index& intervalID,SmartPtr<IpoptApplication> app) const= 0;
 };
 Intervaluation* assignIntervaluationMethod(SmartPtr<OptionsList> options);
 
 class OneBoundIntervaluation : public Intervaluation
 {
 public:
-  SplitChoice intervaluateInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app);
+  SplitChoice intervaluateInterval(const Index& controlrow, const Index& intervalID,SmartPtr<IpoptApplication> app) const;
 };
 
 class BothBoundIntervaluation : public Intervaluation
 {
 public:
-  SplitChoice intervaluateInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app);
+  SplitChoice intervaluateInterval(const Index& controlrow, const Index& intervalID,SmartPtr<IpoptApplication> app) const;
 };
 
 class ControlSelector
 {
 public:
-  virtual SplitDecision decideSplitControl(std::vector<SplitChoice> choices) = 0;
+  virtual SplitDecision decideSplitControl(const std::vector<SplitChoice>& choices) const = 0;
 };
 
 class SelectFirstControl : public ControlSelector
 {
 public:
-  SplitDecision decideSplitControl(std::vector<SplitChoice> choices);
+  SplitDecision decideSplitControl(const std::vector<SplitChoice>& choices) const;
 };
 
 ControlSelector* assignControlMethod(SmartPtr<OptionsList> options);
 
+class ParameterShift
+{
+public:
+  virtual SmartPtr<Matrix> getShiftedSensitivities(SmartPtr<IpoptApplication> app) const =0;
+};
+
+// maybe the order of deciion making should be switched - first decide for KKT lin and then for the shift
+class LinearizeKKT : public ParameterShift
+{
+public:
+  SmartPtr<Matrix> getShiftedSensitivities(SmartPtr<IpoptApplication> app) const;
+};
+
+ParameterShift* assignShiftMethod(SmartPtr<OptionsList> options);
+
 /////////////////////////////end of intervallization pseudo header///////////////////////////////////
 
+Index getVarCountPerInterval(SmartPtr<const Vector>x);
+Index getTotConstrCount(SmartPtr<IpoptApplication> app);
 SmartPtr<Matrix> getSensitivityMatrix(SmartPtr<IpoptApplication> app);
 SmartPtr<Vector> getDirectionalDerivative(SmartPtr<IpoptApplication> app,
 					  SmartPtr<Matrix> sens_matrix);
 bool doIntervalization(SmartPtr<IpoptApplication> app);
-std::vector<Number> getIntervalWidths(IntervalInfoSet intervals, bool do_scaling=false);
 Number Abs(Number value);
 
 ///////////////////////////start of intervallization pseudo implementation//////////////////////////
 IntervalInfo::IntervalInfo() {}
 
-IntervalInfo::IntervalInfo(const Number value, const Index parameterID, const Index intervalID, const Index vector_index, const bool is_upper)
+IntervalInfo::IntervalInfo(const Number& value, const Index& parameterID, const Index& intervalID, const Index& vector_index, const bool& is_upper)
 {
 
   value_ = value;
@@ -242,46 +258,46 @@ IntervalInfo::IntervalInfo(const Number value, const Index parameterID, const In
 
 IntervalInfo:: ~IntervalInfo() {}
 
-void IntervalInfo::setParameters(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
+void IntervalInfo::setParameters(const std::vector<std::string>& pnames, const std::vector<Number>& pvalues)
 {  }
 
-void IntervalInfo::addParameter(const std::vector<std::string> pnames, const std::vector<Number> pvalues)
-{  }
+void IntervalInfo::addParameter(const std::vector<std::string>& pnames, const std::vector<Number>& pvalues)
+{ }
 
-void IntervalInfo::getIndex(Index &index)
+Index IntervalInfo::getIndex() const
 {
-  index = index_;
+  return index_;
 }
 
-void IntervalInfo::getValue(Number &value)
+Number IntervalInfo::getValue() const
 {
-  value = value_;
+  return value_;
 }
 
-void IntervalInfo::setValue(Number value)
+void IntervalInfo::setValue(const Number& value)
 {
-  value_=value;
+  value_ = value;
 }
 
-void IntervalInfo::getIntervalID(Index &nint)
+Index IntervalInfo::getIntervalID() const
 {
-  nint = intervalID_;
+  return intervalID_;
 }
 
-void IntervalInfo::getParameterID(Index &paraID)
+Index IntervalInfo::getParameterID() const
 {
-  paraID = parameterID_;
+  return parameterID_;
 }
 
-bool IntervalInfo::isUpper()
+bool IntervalInfo::isUpper() const
 {
   return is_upper_;
 }
 
-void IntervalInfo::setIntervals(const Index nint)
+void IntervalInfo::setInterval(const Index& nint)
 {  }
 
-void IntervalInfo::printSet()
+void IntervalInfo::printSet() const
 {
   printf("\n value: %f parameterID: %d, intervalID: %d, index: %d, is_upper: %d \n", value_, parameterID_, intervalID_, index_, is_upper_);
 }
@@ -289,7 +305,7 @@ void IntervalInfo::printSet()
 
 IntervalInfoSet::IntervalInfoSet() { }
 
-IntervalInfoSet::IntervalInfoSet(std::vector<IntervalInfo> intinfovec)
+IntervalInfoSet::IntervalInfoSet(const std::vector<IntervalInfo>& intinfovec)
 {
   valuevec_.clear();
   intinfovec_.clear();
@@ -298,20 +314,16 @@ IntervalInfoSet::IntervalInfoSet(std::vector<IntervalInfo> intinfovec)
   intervalIDvec_.clear();
   is_uppervec_.clear();
   Index tmp_index;
-  Index tmp_paraID;
-  Index tmp_intID;
   int i=0;
 
   // sort algorithm to make sure entry indexing in IntervalInfoSet matches given indexing
   while (intinfovec_.size()<intinfovec.size()) {
-    intinfovec[i].getIndex(tmp_index);
+    tmp_index = intinfovec[i].getIndex();
     if (tmp_index==indexvec_.size()) {
       intinfovec_.push_back(intinfovec[i]);
       indexvec_.push_back(tmp_index);
-      intinfovec[i].getParameterID(tmp_paraID);
-      parameterIDvec_.push_back(tmp_paraID);
-      intinfovec[i].getIntervalID(tmp_intID);
-      intervalIDvec_.push_back(tmp_intID);
+      parameterIDvec_.push_back(intinfovec[i].getParameterID());
+      intervalIDvec_.push_back(intinfovec[i].getIntervalID());
       is_uppervec_.push_back(intinfovec[i].isUpper());
     }
     i++;
@@ -375,71 +387,70 @@ IntervalInfoSet::IntervalInfoSet(SmartPtr<const DenseVector> parameters)
 
 IntervalInfoSet::~IntervalInfoSet() {}
 
-void IntervalInfoSet::setIntInfoSet(std::vector<IntervalInfo> intinfovec)
+void IntervalInfoSet::setIntInfoSet(const std::vector<IntervalInfo> &intinfovec)
 {
   intinfovec_=intinfovec;
 }
 
-void IntervalInfoSet::getIntInfoSet(std::vector<IntervalInfo> &intinfovec)
+std::vector<IntervalInfo> IntervalInfoSet::getIntInfoSet() const
 {
-  intinfovec=intinfovec_;
+  return intinfovec_;
 }
 
-void IntervalInfoSet::getIndexVec(std::vector<Index> &indexvec)
+std::vector<Index> IntervalInfoSet::getIndexVec() const
 {
-  indexvec=indexvec_;
+  return indexvec_;
 }
 
-void IntervalInfoSet::getIndex(Index intindex, Index &index)
+Index IntervalInfoSet::getIndex(const Index& intindex) const
 {
   if (intindex<indexvec_.size())
-    index = indexvec_[intindex];
+    return indexvec_[intindex];
   else {
-    index = -1;
+    return -1;
     printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::getIndex() call with out of range index!\n");
   }
 }
 
-void IntervalInfoSet::getValueVec(std::vector<Number> &valuevec)
+std::vector<Number> IntervalInfoSet::getValueVec() const
 {
-  valuevec = valuevec_;
+  return valuevec_;
 }
 
-void IntervalInfoSet::getValue(Index intindex,Number &value)
+Number IntervalInfoSet::getValue(const Index& intindex) const
 {
-  intinfovec_[intindex].getValue(value);
+ return intinfovec_[intindex].getValue();
 }
 
-void IntervalInfoSet::setValueVec(std::vector<Number> valuevec)
+void IntervalInfoSet::setValueVec(const std::vector<Number>& valuevec)
 {
   valuevec_ = valuevec;
 }
 
-void IntervalInfoSet::setValue(Index intindex,Number value)
+void IntervalInfoSet::setValue(const Index& intindex,const Number& value)
 {
   intinfovec_[intindex].setValue(value);
 }
 
-void IntervalInfoSet::getIntervalIDVec(std::vector<Index> &intervalIDvec)
+std::vector<Index> IntervalInfoSet::getIntervalIDVec() const
 {
-  intervalIDvec = intervalIDvec_;
+  return intervalIDvec_;
 }
 
-void IntervalInfoSet::getIntervalID(Index intindex, Index &intervalID)
+Index IntervalInfoSet::getIntervalID(const Index& intindex) const
 {
   if (intindex<intervalIDvec_.size())
-    intervalID = intervalIDvec_[intindex];
+    return intervalIDvec_[intindex];
   else {
-    intervalID = -1;
+    return -1;
     printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::getIntervalID() call with out of range index!\n");
   }
 }
 
-void IntervalInfoSet::getIntervalIDs(std::vector<Index>&intervalIDs)
+std::vector<Index> IntervalInfoSet::getIntervalIDs() const
 {
   std::vector<Index> tmp_IDs;
-  Index nints;
-  this->getIntervalCount(nints);
+  Index nints = this->getIntervalCount();
   Index* tmp_new_ID = new Index;
   Index* tmp_ID = new Index;
   *tmp_new_ID = intervalIDvec_[0];
@@ -460,29 +471,28 @@ void IntervalInfoSet::getIntervalIDs(std::vector<Index>&intervalIDs)
     }
     tmp_IDs.push_back(*tmp_new_ID);
   }
-  intervalIDs = tmp_IDs;
+  return tmp_IDs;
 }
 
-void IntervalInfoSet::getParameterIDVec(std::vector<Index> &parameterIDvec)
+std::vector<Index> IntervalInfoSet::getParameterIDVec() const
 {
-  parameterIDvec = parameterIDvec_;
+  return parameterIDvec_;
 }
 
-void IntervalInfoSet::getParameterID(Index paraindex, Index &parameterID)
+Index IntervalInfoSet::getParameterID(const Index& paraindex) const
 {
   if (paraindex<parameterIDvec_.size())
-    parameterID = parameterIDvec_[paraindex];
+    return parameterIDvec_[paraindex];
   else {
-    parameterID = -1;
+    return -1;
     printf("\nAmplTNLP.cpp: ERROR: IntervalInfoSet::getParameterID() call with out of range index!\n");
   }
 }
 
-void IntervalInfoSet::getParameterIDs(std::vector<Index>&parameterIDs)
+std::vector<Index> IntervalInfoSet::getParameterIDs() const
 {
   std::vector<Index> tmp_IDs;
-  Index nints;
-  this->getParameterCount(nints);
+  Index npars = this->getParameterCount();
   Index* tmp_new_ID = new Index;
   Index* tmp_ID = new Index;
   *tmp_new_ID = parameterIDvec_[0];
@@ -493,7 +503,7 @@ void IntervalInfoSet::getParameterIDs(std::vector<Index>&parameterIDs)
   tmp_IDs.push_back(*tmp_new_ID);
 
   //assign follow up values
-  while (tmp_IDs.size()<nints) {
+  while (tmp_IDs.size()<npars) {
     *tmp_ID = *tmp_new_ID;
     for (int i=0;i<parameterIDvec_.size();i++) {
       if (parameterIDvec_[i]>*tmp_ID && (*tmp_ID==*tmp_new_ID))
@@ -503,15 +513,15 @@ void IntervalInfoSet::getParameterIDs(std::vector<Index>&parameterIDs)
     }
     tmp_IDs.push_back(*tmp_new_ID);
   }
-  parameterIDs = tmp_IDs;
+  return tmp_IDs;
 }
 
-void IntervalInfoSet::isUpperVec(std::vector<bool> &is_uppervec)
+std::vector<bool> IntervalInfoSet::isUpperVec() const
 {
-  is_uppervec=is_uppervec_;
+  return is_uppervec_;
 }
 
-bool IntervalInfoSet::isUpper(Index isupperindex)
+bool IntervalInfoSet::isUpper(const Index& isupperindex) const
 {
   if (isupperindex<is_uppervec_.size())
     return is_uppervec_[isupperindex];
@@ -521,17 +531,18 @@ bool IntervalInfoSet::isUpper(Index isupperindex)
     return 0;
   }
 }
-void IntervalInfoSet::getOtherBndIdx(Index boundindex,Index &otherbndidx)
+
+Index IntervalInfoSet::getOtherBndIdx(const Index& boundindex) const
 {
   for (int i=0;i<intinfovec_.size();i++){
-    if (parameterIDvec_[int(boundindex)]==parameterIDvec_[i] && intervalIDvec_[int(boundindex)]==intervalIDvec_[i] && is_uppervec_[int(boundindex)]!=is_uppervec_[i]){
-      otherbndidx = indexvec_[i];
-      i=intinfovec_.size();
+    if (parameterIDvec_[boundindex]==parameterIDvec_[i] && intervalIDvec_[boundindex]==intervalIDvec_[i] && is_uppervec_[boundindex]!=is_uppervec_[i]){
+      return indexvec_[i];
     }
   }
+  return 0;
 }
 
-void IntervalInfoSet::getParameterCount(Index &paracount)
+Index IntervalInfoSet::getParameterCount() const
 {
   Index tmp_count =0;
   for (int i=0;i<parameterIDvec_.size();i++) {
@@ -540,10 +551,10 @@ void IntervalInfoSet::getParameterCount(Index &paracount)
     if (parameterIDvec_[i]>tmp_count)
       tmp_count = parameterIDvec_[i];
   }
-  paracount = tmp_count;
+  return tmp_count;
 }
 
-void IntervalInfoSet::getIntervalCount(Index &intervalcount)
+Index IntervalInfoSet::getIntervalCount() const
 {
   Index tmp_count= 0;
   for (int i=0;i<intervalIDvec_.size();i++) {
@@ -552,10 +563,10 @@ void IntervalInfoSet::getIntervalCount(Index &intervalcount)
     if (intervalIDvec_[i]>tmp_count)
       tmp_count = intervalIDvec_[i];
   }
-  intervalcount = tmp_count;
+  return tmp_count;
 }
 
-void IntervalInfoSet::printSet()
+void IntervalInfoSet::printSet() const
 {
   for (int i=0; i<intinfovec_.size();i++){
     printf("\n\nIntervalInfoSet Eintrag %d:\n", i);
@@ -564,7 +575,7 @@ void IntervalInfoSet::printSet()
   }
 }
 
-Index IntervalInfoSet::Size()
+Index IntervalInfoSet::Size() const
 {
   return intinfovec_.size();
 }
@@ -586,32 +597,26 @@ IntervalWidthScaling* assignScalingMethod(SmartPtr<OptionsList> options)
 }
 
 
-std::vector<Number> NoScaling::scaleIntervalWidths(IntervalInfoSet intervals,Index intervalID)
+std::vector<Number> NoScaling::scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID) const
 {
   // no scaling: just return a vector with apropriate length containing 1s
-  Index npars;
-  intervals.getParameterCount(npars);
+  Index npars = intervals.getParameterCount();
   std::vector<Number> retval(npars);
   for (int i=0;i<npars;i++)
     retval[i]=1;
   return retval;
 }
 
-std::vector<Number> TotIntWidthScaling::scaleIntervalWidths(IntervalInfoSet intervals,Index intervalID)
+std::vector<Number> TotIntWidthScaling::scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID) const
 {
-  Index npars;
-  intervals.getParameterCount(npars);
+  Index npars = intervals.getParameterCount();
   std::vector<Number> retval(npars);
   for (int i=0;i<npars;i++)
     retval[i]=0;
-  std::vector<Number> par_values;
-  intervals.getValueVec(par_values);
-  std::vector<Index> intervalflags;
-  intervals.getIntervalIDVec(intervalflags);
-  std::vector<Index> parameterflags;
-  intervals.getParameterIDVec(parameterflags);
-  std::vector<Index> parameterIDs;
-  intervals.getParameterIDs(parameterIDs);
+  std::vector<Number> par_values = intervals.getValueVec();
+  std::vector<Index> intervalflags = intervals.getIntervalIDVec();
+  std::vector<Index> parameterflags = intervals.getParameterIDVec();
+  std::vector<Index> parameterIDs = intervals.getParameterIDs();
   //store largest and smallest interval bounds for each parameter
   std::vector<Number> tmp_largest(npars);
   std::vector<Number> tmp_smallest(npars);
@@ -654,21 +659,16 @@ std::vector<Number> TotIntWidthScaling::scaleIntervalWidths(IntervalInfoSet inte
   return retval;
 }
 
-std::vector<Number> IntWidthScaling::scaleIntervalWidths(IntervalInfoSet intervals,Index intervalID)
+std::vector<Number> IntWidthScaling::scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID) const
 {
-  Index npars;
-  intervals.getParameterCount(npars);
+  Index npars = intervals.getParameterCount();
   std::vector<Number> retval(npars);
   for (int i=0;i<npars;i++)
     retval[i]=0;
-  std::vector<Number> par_values;
-  intervals.getValueVec(par_values);
-  std::vector<Index> intervalflags;
-  intervals.getIntervalIDVec(intervalflags);
-  std::vector<Index> parameterflags;
-  intervals.getParameterIDVec(parameterflags);
-  std::vector<Index> parameterIDs;
-  intervals.getParameterIDs(parameterIDs);
+  std::vector<Number> par_values = intervals.getValueVec();
+  std::vector<Index> intervalflags = intervals.getIntervalIDVec();
+  std::vector<Index> parameterflags = intervals.getParameterIDVec();
+  std::vector<Index> parameterIDs = intervals.getParameterIDs();
 
   for (int i=0;i<npars;i++) {
     for (int j=0;j<intervals.Size();j++) {
@@ -703,17 +703,17 @@ BranchingCriterion* assignBranchingMethod(SmartPtr<OptionsList> options)
     return new RandomBranching();
 }
 
-std::vector<SplitChoice> RandomBranching::branchSensitivityMatrix(SmartPtr<IpoptApplication> app)
+std::vector<SplitChoice> RandomBranching::branchSensitivityMatrix(SmartPtr<IpoptApplication> app) const
 {
   // RandomBranching not implemented yet.
 }
 
-SplitChoice RandomBranching::branchInterval(std::vector<SplitChoice> splitchoices)
+SplitChoice RandomBranching::branchInterval(const std::vector<SplitChoice>& splitchoices) const
 {
   // RandomBranching not implemented yet.
 }
 
-std::vector<SplitChoice>  LargerBranching::branchSensitivityMatrix(SmartPtr<IpoptApplication> app)
+std::vector<SplitChoice>  LargerBranching::branchSensitivityMatrix(SmartPtr<IpoptApplication> app) const
 {
 
   SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
@@ -732,13 +732,13 @@ std::vector<SplitChoice>  LargerBranching::branchSensitivityMatrix(SmartPtr<Ipop
     if (!var_int_flags[i])
       ctrl_rows.push_back(i);
   }
-
+  printf("\nLargerBranching::branchSensitivityMatrix: ctrl_rows.size() is: %d\n",ctrl_rows.size());
   std::vector<SplitChoice> retval;
-  std::vector<Index> intervalIDs;
-  intervals.getIntervalIDs(intervalIDs);
+  std::vector<Index> intervalIDs = intervals.getIntervalIDs();
   // cycle through controls and intervals to setup intervaluation for each control at each interval
   SplitChoice tmp_split_choice;
   Intervaluation* intervaluater = assignIntervaluationMethod(options);
+  assert(intervalIDs.size());
   for (Index i=0;i<ctrl_rows.size();i++) {
     //with only one control and only one interval, the only decision left is which parameter to split. thats done by intervaluation
     retval.push_back(intervaluater->intervaluateInterval(ctrl_rows[i],intervalIDs[0],app));
@@ -754,8 +754,9 @@ std::vector<SplitChoice>  LargerBranching::branchSensitivityMatrix(SmartPtr<Ipop
   return retval;
 }
 
-SplitChoice LargerBranching::branchInterval(std::vector<SplitChoice> splitchoices)
+SplitChoice LargerBranching::branchInterval(const std::vector<SplitChoice>& splitchoices) const
 {
+  assert(splitchoices.size());
   // directly return given value if there are no different intervals
   SplitChoice retval=splitchoices[0];
   // otherwise pick the interval critical to branchmode
@@ -768,7 +769,7 @@ SplitChoice LargerBranching::branchInterval(std::vector<SplitChoice> splitchoice
   return retval;
 }
 
-std::vector<SplitChoice> SmallerBranching::branchSensitivityMatrix(SmartPtr<IpoptApplication> app)
+std::vector<SplitChoice> SmallerBranching::branchSensitivityMatrix(SmartPtr<IpoptApplication> app) const
 {
 
   SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
@@ -787,14 +788,15 @@ std::vector<SplitChoice> SmallerBranching::branchSensitivityMatrix(SmartPtr<Ipop
     if (!var_int_flags[i])
       ctrl_rows.push_back(i);
   }
-
+  printf("\nSmallerBranching::branchSensitivityMatrix: ctrl_rows.size() is: %d\n",ctrl_rows.size());
   std::vector<SplitChoice> retval;
-  std::vector<Index> intervalIDs;
-  intervals.getIntervalIDs(intervalIDs);
+  std::vector<Index> intervalIDs = intervals.getIntervalIDs();
   // cycle through controls and intervals to setup intervaluation for each control at each interval
   SplitChoice tmp_split_choice;
   Intervaluation* intervaluater = assignIntervaluationMethod(options);
+  assert(intervalIDs.size());
   for (Index i=0;i<ctrl_rows.size();i++) {
+    assert (intervalIDs.size());
     //with only one control and only one interval, the only decision left is which parameter to split. thats done by intervaluation
     retval.push_back(intervaluater->intervaluateInterval(ctrl_rows[i],intervalIDs[0],app));
     if (intervalIDs.size()>1) {
@@ -809,8 +811,9 @@ std::vector<SplitChoice> SmallerBranching::branchSensitivityMatrix(SmartPtr<Ipop
   return retval;
 }
 
-SplitChoice SmallerBranching::branchInterval(std::vector<SplitChoice> splitchoices)
+SplitChoice SmallerBranching::branchInterval(const std::vector<SplitChoice>& splitchoices) const
 {
+  assert(splitchoices.size());
   // directly return given value if there are no different intervals
   SplitChoice retval=splitchoices[0];
   // otherwise pick the interval critical to branchmode
@@ -824,7 +827,7 @@ SplitChoice SmallerBranching::branchInterval(std::vector<SplitChoice> splitchoic
   return retval;
 }
 
-std::vector<SplitChoice> AbsoluteLargerBranching::branchSensitivityMatrix(SmartPtr<IpoptApplication> app)
+std::vector<SplitChoice> AbsoluteLargerBranching::branchSensitivityMatrix(SmartPtr<IpoptApplication> app) const
 {
 
   SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
@@ -844,12 +847,14 @@ std::vector<SplitChoice> AbsoluteLargerBranching::branchSensitivityMatrix(SmartP
       ctrl_rows.push_back(i);
   }
 
+  printf("\nAbsoluteLargerBranching::branchSensitivityMatrix: ctrl_rows.size() is: %d\n",ctrl_rows.size());
+
   std::vector<SplitChoice> retval;
-  std::vector<Index> intervalIDs;
-  intervals.getIntervalIDs(intervalIDs);
+  std::vector<Index> intervalIDs = intervals.getIntervalIDs();
   // cycle through controls and intervals to setup intervaluation for each control at each interval
   SplitChoice tmp_split_choice;
   Intervaluation* intervaluater = assignIntervaluationMethod(options);
+  assert(intervalIDs.size());
   for (Index i=0;i<ctrl_rows.size();i++) {
     //with only one control and only one interval, the only decision left is which parameter to split. thats done by intervaluation
     retval.push_back(intervaluater->intervaluateInterval(ctrl_rows[i],intervalIDs[0],app));
@@ -865,8 +870,9 @@ std::vector<SplitChoice> AbsoluteLargerBranching::branchSensitivityMatrix(SmartP
   return retval;
 }
 
-SplitChoice AbsoluteLargerBranching::branchInterval(std::vector<SplitChoice> splitchoices)
+SplitChoice AbsoluteLargerBranching::branchInterval(const std::vector<SplitChoice>& splitchoices) const
 {
+  assert(splitchoices.size());
   // directly return given value if there are no different intervals
   SplitChoice retval=splitchoices[0];
   // otherwise pick the interval critical to branchmode
@@ -894,7 +900,7 @@ Intervaluation* assignIntervaluationMethod(SmartPtr<OptionsList> options)
 
 }
 
-SplitChoice OneBoundIntervaluation::intervaluateInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app)
+SplitChoice OneBoundIntervaluation::intervaluateInterval(const Index& controlrow, const Index& intervalID,SmartPtr<IpoptApplication> app) const
 {
   SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
   SmartPtr<MultiVectorMatrix> mv_sens = dynamic_cast<MultiVectorMatrix*>(GetRawPtr(sens_matrix));
@@ -908,17 +914,12 @@ SplitChoice OneBoundIntervaluation::intervaluateInterval(Index controlrow, Index
   BranchingCriterion* int_brancher = assignBranchingMethod(options);
   IntervalWidthScaling* scalingmode = assignScalingMethod(options);
   std::vector<Number> intervalwidths =  scalingmode->scaleIntervalWidths(intervals,intervalID);
-  std::vector<Number> p_values;
-  intervals.getValueVec(p_values);
-  std::vector<Index> ID_vec;
-  intervals.getIntervalIDVec(ID_vec);
-  std::vector<Index> para_vec;
-  intervals.getParameterIDVec(para_vec);
-  Index npars;
-  intervals.getParameterCount(npars);
+  std::vector<Number> p_values = intervals.getValueVec();
+  std::vector<Index> ID_vec = intervals.getIntervalIDVec();
+  std::vector<Index> para_vec = intervals.getParameterIDVec();
+  Index npars = intervals.getParameterCount();
   std::vector<SplitChoice> int_splitchoices(2*npars);
-  std::vector<Index> parameterIDs;
-  intervals.getParameterIDs(parameterIDs);
+  std::vector<Index> parameterIDs = intervals.getParameterIDs();
   Number tmp_value;
   Index tmp_idx;
   //cycle through the different parameter values for the given interval and determine branching objective values
@@ -930,7 +931,7 @@ SplitChoice OneBoundIntervaluation::intervaluateInterval(Index controlrow, Index
     for (int j=0;j<intervals.Size();j++) {
       if (ID_vec[j]==intervalID && para_vec[j]==parameterIDs[i]) {
       // parameter entry for interval in question found!
-	intervals.getOtherBndIdx(j,tmp_idx);
+	tmp_idx = intervals.getOtherBndIdx(j);
 	const Number* sensitivity_value_1 = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(j)))->Values();
 	const Number* sensitivity_value_2 = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(tmp_idx)))->Values();
 	int_splitchoices[2*i].reason_value = *(sensitivity_value_1+controlrow)*intervalwidths[i];
@@ -944,7 +945,7 @@ SplitChoice OneBoundIntervaluation::intervaluateInterval(Index controlrow, Index
   return retval;
 }
 
-SplitChoice BothBoundIntervaluation::intervaluateInterval(Index controlrow, Index intervalID,SmartPtr<IpoptApplication> app)
+SplitChoice BothBoundIntervaluation::intervaluateInterval(const Index& controlrow, const Index& intervalID,SmartPtr<IpoptApplication> app) const
 {
   SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
   SmartPtr<MultiVectorMatrix> mv_sens = dynamic_cast<MultiVectorMatrix*>(GetRawPtr(sens_matrix));
@@ -958,17 +959,12 @@ SplitChoice BothBoundIntervaluation::intervaluateInterval(Index controlrow, Inde
   BranchingCriterion* int_brancher = assignBranchingMethod(options);
   IntervalWidthScaling* scalingmode = assignScalingMethod(options);
   std::vector<Number> intervalwidths =  scalingmode->scaleIntervalWidths(intervals,intervalID);
-  std::vector<Number> p_values;
-  intervals.getValueVec(p_values);
-  std::vector<Index> ID_vec;
-  intervals.getIntervalIDVec(ID_vec);
-  std::vector<Index> para_vec;
-  intervals.getParameterIDVec(para_vec);
-  Index npars;
-  intervals.getParameterCount(npars);
-  std::vector<SplitChoice> int_splitchoices(npars);
-  std::vector<Index> parameterIDs;
-  intervals.getParameterIDs(parameterIDs);
+  std::vector<Number> p_values = intervals.getValueVec();
+  std::vector<Index> ID_vec = intervals.getIntervalIDVec();
+  std::vector<Index> para_vec = intervals.getParameterIDVec();
+  Index npars = intervals.getParameterCount();
+  std::vector<SplitChoice> int_splitchoices(2*npars);
+  std::vector<Index> parameterIDs = intervals.getParameterIDs();
   Number tmp_value;
   Index tmp_idx;
   //cycle through the different parameter values for the given interval and determine branching objective values
@@ -978,7 +974,7 @@ SplitChoice BothBoundIntervaluation::intervaluateInterval(Index controlrow, Inde
     for (int j=0;j<intervals.Size();j++) {
       if (ID_vec[j]==intervalID && para_vec[j]==parameterIDs[i]) {
       // parameter entry for interval in question found!
-	intervals.getOtherBndIdx(j,tmp_idx);
+	tmp_idx = intervals.getOtherBndIdx(j);
 	const Number* sensitivity_value_1 = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(j)))->Values();
 	const Number* sensitivity_value_2 = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(tmp_idx)))->Values();
 	tmp_value = *(sensitivity_value_1+controlrow);
@@ -992,8 +988,9 @@ SplitChoice BothBoundIntervaluation::intervaluateInterval(Index controlrow, Inde
   return retval;
 }
 
-SplitDecision SelectFirstControl::decideSplitControl(std::vector<SplitChoice> choices)
+SplitDecision SelectFirstControl::decideSplitControl(const std::vector<SplitChoice>& choices) const
 {
+  assert(choices.size());
   //simply returns first entry of SplitDecisions
   SplitDecision retval;
   retval.intervalID = choices[0].intervalID;
@@ -1003,7 +1000,93 @@ SplitDecision SelectFirstControl::decideSplitControl(std::vector<SplitChoice> ch
 
 ControlSelector* assignControlMethod(SmartPtr<OptionsList> options)
 {
+  // no other Control methods implemented yet!
   return new SelectFirstControl();
+}
+
+Index getVarCountPerInterval(SmartPtr<const Vector> x)
+{
+  SmartPtr<const DenseVectorSpace> x_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(x->OwnerSpace()));
+  const std::vector<Index> intervalflags =  x_space->GetIntegerMetaData("intervalID");
+  assert(intervalflags.size());
+  Index tmp_ID;
+  Index retval = 0;
+  const Index n_x = x_space->Dim();
+  // assign first non-zero value to tmp_ID
+  for (Index i=0;i<n_x;i++) {
+    if (intervalflags[i]) {
+	tmp_ID=intervalflags[i];
+	// start searching for entries with intervalID equal to given one
+	for (Index j=i;j<n_x;j++) {
+	  if (intervalflags[j] == tmp_ID) {
+	    retval++;
+	  }
+	}
+	// everythings done, break outer for loop
+    }
+    break;
+  }
+  /*
+  const std::vector<std::string> entrynames =  x_space->GetStringMetaData("idx_names");
+  assert(entrynames.size());
+  for (int i=0;i<retval;i++) {
+    printf("entrynames[%d]: %s   value: %d   \n",i,entrynames[i].c_str(),intervalflags[i]);
+    }*/
+  return retval;
+}
+
+Index getTotConstrCount(SmartPtr<IpoptApplication> app)
+{
+  SmartPtr<IpoptNLP> ipopt_nlp = app->IpoptNLPObject();
+  SmartPtr<OrigIpoptNLP> orig_nlp = dynamic_cast<OrigIpoptNLP*>(GetRawPtr(ipopt_nlp));
+  SmartPtr<const VectorSpace> x_space;
+  SmartPtr<const VectorSpace> p_space;
+  SmartPtr<const VectorSpace> c_space;
+  SmartPtr<const VectorSpace> d_space;
+  SmartPtr<const VectorSpace> x_l_space;
+  SmartPtr<const MatrixSpace> px_l_space;
+  SmartPtr<const VectorSpace> x_u_space;
+  SmartPtr<const MatrixSpace> px_u_space;
+  SmartPtr<const VectorSpace> d_l_space;
+  SmartPtr<const MatrixSpace> pd_l_space;
+  SmartPtr<const VectorSpace> d_u_space;
+  SmartPtr<const MatrixSpace> pd_u_space;
+  SmartPtr<const MatrixSpace> jac_c_space;
+  SmartPtr<const MatrixSpace> jac_d_space;
+  SmartPtr<const SymMatrixSpace> h_space;
+  SmartPtr<const MatrixSpace> jac_c_p_space;
+  SmartPtr<const MatrixSpace> jac_d_p_space;
+  SmartPtr<const MatrixSpace> h_p_space;
+  orig_nlp->GetSpaces(x_space, p_space, c_space, d_space,
+                x_l_space, px_l_space, x_u_space, px_u_space,
+                d_l_space, pd_l_space, d_u_space, pd_u_space,
+                jac_c_space, jac_d_space, h_space,
+                jac_c_p_space, jac_d_p_space, h_p_space);
+    return 0;
+}
+
+SmartPtr<Matrix> LinearizeKKT::getShiftedSensitivities(SmartPtr<IpoptApplication> app) const
+{
+  SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
+  SmartPtr<MultiVectorMatrix> mv_sens = dynamic_cast<MultiVectorMatrix*>(GetRawPtr(sens_matrix));
+  SmartPtr<IpoptNLP> ipopt_nlp = app->IpoptNLPObject();
+  SmartPtr<OrigIpoptNLP> orig_nlp = dynamic_cast<OrigIpoptNLP*>(GetRawPtr(ipopt_nlp));
+  SmartPtr<const DenseVector> p = dynamic_cast<const DenseVector*>(GetRawPtr(orig_nlp->p()));
+  IntervalInfoSet intervals = IntervalInfoSet(p);
+  SmartPtr<OptionsList> options = app->Options();
+  Index np = orig_nlp->p()->Dim();
+  SmartPtr<const Vector> x = app->IpoptDataObject()->curr()->x();
+  SmartPtr<MultiVectorMatrixSpace> rhs_space = new MultiVectorMatrixSpace(np, *x->OwnerSpace());
+  SmartPtr<MultiVectorMatrix> mv = dynamic_cast<MultiVectorMatrix*>(rhs_space->MakeNew());
+
+  return sens_matrix;
+
+}
+
+ParameterShift* assignShiftMethod(SmartPtr<OptionsList> options)
+{
+  // no other shift methods implemented yet!
+  return new LinearizeKKT();
 }
 
 ////////////////////////////end of intervallization pseudo implementation///////////////////////////
@@ -1058,12 +1141,8 @@ int main(int argc, char**args)
   // Add the suffix for parameter-marking
   suffix_handler->AddAvailableSuffix("parameter", AmplSuffixHandler::Variable_Source, AmplSuffixHandler::Index_Type);
   suffix_handler->AddAvailableSuffix("perturbed", AmplSuffixHandler::Variable_Source, AmplSuffixHandler::Number_Type);
-  // Add the suffix for intervall-organization
+  // Add the suffix for interval-organization
   suffix_handler->AddAvailableSuffix("intervalID", AmplSuffixHandler::Variable_Source, AmplSuffixHandler::Index_Type);
-  // Add the suffixes for branching criterion, scaling, and benefit valueing
-  suffix_handler->AddAvailableSuffix("branchmode", AmplSuffixHandler::Variable_Source, AmplSuffixHandler::Index_Type);
-  suffix_handler->AddAvailableSuffix("scaling", AmplSuffixHandler::Variable_Source, AmplSuffixHandler::Index_Type);
-  suffix_handler->AddAvailableSuffix("benefit_value", AmplSuffixHandler::Variable_Source, AmplSuffixHandler::Index_Type);
 
   SmartPtr<ParaTNLP> ampl_tnlp = new AmplTNLP(ConstPtr(app->Jnlst()),
 					      app->Options(),
@@ -1200,6 +1279,12 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
 
   ControlSelector* pickfirst = assignControlMethod(options);
   SplitDecision resulting_split = pickfirst->decideSplitControl(splitchoices);
+  SmartPtr<const Vector> x = app->IpoptDataObject()->curr()->x();
+  Index a =  getVarCountPerInterval(x);
+
+  printf("\nampl_ipopt.cpp: Number of original variables calculated to be: %d \n", a);
+
+  printf("\nproposed for split: intervalID: %d parameter: %d\n",resulting_split.intervalID,resulting_split.parameterID);
 
   //write gathered information into .dat file to access with python
   std::string fname = "branch_intervals.dat";
