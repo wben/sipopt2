@@ -4,9 +4,6 @@
 suffix parameter, IN;
 suffix perturbed, IN;
 suffix intervalID, IN;
-suffix branchmode, IN;
-suffix scaling, IN;
-suffix benefit_value, IN;
 
 model parameterfree.mod;
 

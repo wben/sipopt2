@@ -241,7 +241,7 @@ def run():
 
 #        for (bm,sc,bv) in [(3,2,2),(2,2,2),(3,2,1)]:
         for bm in [2]:
-            for sc in [1]:
+            for sc in [2]:
                 for bv in  [2]:
                     ampl_script = 'autorandomintervals.run'
                     pLnames = ['p1L', 'p2L']

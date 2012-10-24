@@ -36,7 +36,7 @@ let {kk in int, i in 1..1,j in cp} xBL[kk,i,j].intervalID := kk;
 let {kk in int, i in 1..1,j in cp} xBU[kk,i,j].intervalID := kk;
 
 let {kk in int} xCU[kk].intervalID := kk;
-let xBmin.intervalID := 1;
+#let xBmin.intervalID := 1;
 
 #include perturb.inc;
 
