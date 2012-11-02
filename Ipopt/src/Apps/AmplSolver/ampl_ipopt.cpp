@@ -233,8 +233,8 @@ ControlSelector* assignControlMethod(SmartPtr<OptionsList> options);
 class ParameterShift
 {
 public:
-  virtual SmartPtr<Matrix> getShiftedRHS(SmartPtr<IpoptApplication> app) const =0;
-  virtual SmartPtr<Matrix> getShiftedSensitivities(SmartPtr<IpoptApplication> app) const =0;
+  virtual SmartPtr<Matrix> getShiftedRHS(SmartPtr<IpoptApplication> app,const Index & interval) const =0;
+  virtual SmartPtr<Matrix> getShiftedSensitivities(SmartPtr<IpoptApplication> app,const Index & interval) const =0;
 
 };
 
@@ -242,15 +242,15 @@ public:
 class LinearizeKKT : public ParameterShift
 {
 public:
-  SmartPtr<Matrix> getShiftedRHS(SmartPtr<IpoptApplication> app) const;
+  SmartPtr<Matrix> getShiftedRHS(SmartPtr<IpoptApplication> app,const Index & interval) const;
   /* Method setting up RHS of Lin KKT as a MultiVecMatrix */
-  SmartPtr<Matrix> getShiftedSensitivities(SmartPtr<IpoptApplication> app) const;
+  SmartPtr<Matrix> getShiftedSensitivities(SmartPtr<IpoptApplication> app,const Index & interval) const;
 };
 
 ParameterShift* assignShiftMethod(SmartPtr<OptionsList> options);
 
 /////////////////////////////end of intervallization pseudo header///////////////////////////////////
-SmartPtr<MultiVectorMatrix> getMVMfromMatrix(SmartPtr<Matrix> matrix);
+SmartPtr<MultiVectorMatrix> getMVMFromMatrix(SmartPtr<Matrix> matrix, SmartPtr<IpoptApplication> app);
 Index getVarCountPerInterval(SmartPtr<const Vector>x);
 Index getTotConstrCount(SmartPtr<IpoptApplication> app);
 SmartPtr<Matrix> getSensitivityMatrix(SmartPtr<IpoptApplication> app);
@@ -1036,11 +1036,9 @@ Index getVarCountPerInterval(SmartPtr<const Vector> x)
     if (!tmp_ID && intervalflags[i]) {
       tmp_ID=intervalflags[i];
       retval++;
-      printf("entrynames[%d]: %s   value: %d   \n",i,entrynames[i].c_str(),intervalflags[i]);
     } else {
       if (tmp_ID == intervalflags[i]) {
 	retval++;
-	printf("entrynames[%d]: %s   value: %d   \n",i,entrynames[i].c_str(),intervalflags[i]);
       }
     }
   }
@@ -1048,6 +1046,7 @@ Index getVarCountPerInterval(SmartPtr<const Vector> x)
   return retval;
 }
 
+/*
 Index getTotConstrCount(SmartPtr<IpoptApplication> app)
 {
   SmartPtr<IpoptNLP> ipopt_nlp = app->IpoptNLPObject();
@@ -1106,7 +1105,7 @@ Index getTotConstrCount(SmartPtr<IpoptApplication> app)
     printf("\nampl_ipopt: Warning: h_p_space is a null pointer.");
   }
     return 0;
-}
+}*/
 
 SmartPtr<Vector> getVectorFromMatrix(const Index& colindex, SmartPtr<Matrix>& matrix)
 {
@@ -1114,7 +1113,7 @@ SmartPtr<Vector> getVectorFromMatrix(const Index& colindex, SmartPtr<Matrix>& ma
 }
 
 SmartPtr<Vector> extractVecFromMat(const Index& colindex, SmartPtr<Matrix>& matrix, const std::vector<Index>& indexlist)
-{
+{/*
   // get vector from which to extract target values
   SmartPtr<DenseVector> retvec = dynamic_cast<DenseVector*>(GetRawPtr(getVectorFromMatrix(colindex,matrix)));
   SmartPtr<DenseVectorSpace> retval_space = new DenseVectorSpace(indexlist.size());
@@ -1130,38 +1129,49 @@ SmartPtr<Vector> extractVecFromMat(const Index& colindex, SmartPtr<Matrix>& matr
    }
   retval->SetValues(rr_values);
   // mal checken, ob der Umweg über tmp_... weggelassen werden kann!
+ */
 }
 
-SmartPtr<MultiVectorMatrix> getMVMfromMatrix(SmartPtr<Matrix> matrix)
+SmartPtr<MultiVectorMatrix> getMVMFromMatrix(SmartPtr<const Matrix> matrix, SmartPtr<IpoptApplication> app)
 {
+  if (matrix->HasValidNumbers()) {
+    printf("ampl_ipopt: matrix has valid numbers. \n");
+  }
+
   // set up neccessary Spaces and return value candidates
   const Index n_cols = (matrix->OwnerSpace())->NCols();
   const Index n_rows = (matrix->OwnerSpace())->NRows();
+  printf("\nampl_ipopt: getMVMFromMatrix: original matrix size: NROWS: %d, NCOLS: %d.",n_rows,n_cols);
   SmartPtr<DenseVectorSpace> retvec_space = new DenseVectorSpace(n_rows);
   SmartPtr<DenseVector> retvec = retvec_space->MakeNewDenseVector();
+  SmartPtr<DenseVector> one = one_space->MakeNewDenseVector();
   SmartPtr<MultiVectorMatrixSpace> retval_space = new MultiVectorMatrixSpace(n_cols,*retvec_space);
   SmartPtr<MultiVectorMatrix> retval = retval_space->MakeNewMultiVectorMatrix();
+  retval->FillWithNewVectors();
   SmartPtr<MultiVectorMatrixSpace> unit_space = new MultiVectorMatrixSpace(n_rows,*retvec_space);
   SmartPtr<MultiVectorMatrix> unit = unit_space->MakeNewMultiVectorMatrix();
 
+  //  unit->FillWithNewVectors();
   // assign ones and zeros to identity matrix
   Number* unit_values = new Number[n_rows];
-  for (int i=0;i<n_rows;++i) {
-    SmartPtr<DenseVector> unitvector = retvec_space->MakeNewDenseVector();
-    for (int j=0;j<n_rows;++j)
-      unit_values[j]= 0.0;
+  // more efficient way: homogeneous vector with 0s, then copy to pos the 1 where its supposed to be
+  SmartPtr<DenseVector> unitvector = dynamic_cast<const DenseVector*>(retvec_space->MakeNewDenseVector());
+  for (int i=0;i<n_rows;i++) {
+    for (int j=0;j<n_rows;j++)
+      unit_values[j] = 0.0;
     unit_values[i] = 1.0;
     unitvector->SetValues(unit_values);
     unit->SetVector(i,*unitvector);
   }
+  unit->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "unit");
 
   // do actual transformation
   retval->AddRightMultMatrix(1.0,*unit,*matrix,0.0);
-
+  retval->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "retval");
   return retval;
 }
 
-SmartPtr<Matrix> LinearizeKKT::getShiftedRHS(SmartPtr<IpoptApplication> app) const
+SmartPtr<Matrix> LinearizeKKT::getShiftedRHS(SmartPtr<IpoptApplication> app,const Index & interval) const
 {
   SmartPtr<IpoptNLP> ipopt_nlp = app->IpoptNLPObject();
   SmartPtr<OrigIpoptNLP> orig_nlp = dynamic_cast<OrigIpoptNLP*>(GetRawPtr(ipopt_nlp));
@@ -1174,6 +1184,21 @@ SmartPtr<Matrix> LinearizeKKT::getShiftedRHS(SmartPtr<IpoptApplication> app) con
   SmartPtr<const Matrix> rhs_d = orig_nlp->jac_d_p(*x);
   SmartPtr<const Matrix> rhs_h = orig_nlp->h_p(*x, 1.0, *y_c, *y_d);
 
+  if (rhs_h->HasValidNumbers())
+    printf("\nrhs_h has valid numbers.");
+  else
+    printf("\nrhs_h does not have valid numbers.");
+
+  if (rhs_c->HasValidNumbers())
+    printf("\nrhs_c has valid numbers.");
+  else
+    printf("\nrhs_c does not have valid numbers.");
+
+  if (rhs_d->HasValidNumbers())
+    printf("\nrhs_d has valid numbers.");
+  else
+    printf("\nrhs_d does not have valid numbers.");
+
   // check the spaces and sizes
   SmartPtr<const VectorSpace> x_space = x->OwnerSpace();
   SmartPtr<const VectorSpace> y_c_space = y_c->OwnerSpace();
@@ -1181,22 +1206,38 @@ SmartPtr<Matrix> LinearizeKKT::getShiftedRHS(SmartPtr<IpoptApplication> app) con
   printf("\nx_space->Dim(): %d",x_space->Dim());
   printf("\ny_c_space->Dim(): %d",y_c_space->Dim());
   printf("\ny_d_space->Dim(): %d",y_d_space->Dim());
-  //this could be done easier-- size check is available for matrizes without the space-step.
-  SmartPtr<const MatrixSpace> rhs_c_space = rhs_c->OwnerSpace();
-  SmartPtr<const MatrixSpace> rhs_d_space = rhs_d->OwnerSpace();
+
+  // SmartPtr<const MatrixSpace> rhs_c_space = rhs_c->OwnerSpace();
+  // SmartPtr<const MatrixSpace> rhs_d_space = rhs_d->OwnerSpace();
   SmartPtr<const MatrixSpace> rhs_h_space = rhs_h->OwnerSpace();
-  printf("\nrhs_c_space->NCols(): %d, rhs_c_space->NRows(): %d",rhs_c_space->NCols(), rhs_c_space->NRows());
-  printf("\nrhs_d_space->NCols(): %d, rhs_d_space->NRows(): %d",rhs_d_space->NCols(), rhs_d_space->NRows());
+  //  printf("\nrhs_c_space->NCols(): %d, rhs_c_space->NRows(): %d",rhs_c_space->NCols(), rhs_c_space->NRows());
+  //  printf("\nrhs_d_space->NCols(): %d, rhs_d_space->NRows(): %d",rhs_d_space->NCols(), rhs_d_space->NRows());
   printf("\nrhs_h_space->NCols(): %d, rhs_h_space->NRows(): %d",rhs_h_space->NCols(), rhs_h_space->NRows());
 
   Index true_n_x =  getVarCountPerInterval(x);
   printf("\nampl_ipopt.cpp: Number of original variables calculated to be: %d \n", true_n_x);
+  SmartPtr<MultiVectorMatrix> h_MVM =  getMVMFromMatrix(rhs_h, app);
+  //  h_MVM->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "h_MVM");
+  SmartPtr<MultiVectorMatrix> c_MVM =  getMVMFromMatrix(rhs_c, app);
+  //  c_MVM->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "c_MVM");
+  SmartPtr<MultiVectorMatrix> d_MVM =  getMVMFromMatrix(rhs_d, app);
+  //  d_MVM->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "d_MVM");
 
+  SmartPtr<const VectorSpace> h_vec_space = (dynamic_cast<const MultiVectorMatrixSpace*>(GetRawPtr(h_MVM->OwnerSpace())))->ColVectorSpace();
+  SmartPtr<const DenseVectorSpace> h_d_vec_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(h_vec_space));
+  SmartPtr<const VectorSpace> c_vec_space = (dynamic_cast<const MultiVectorMatrixSpace*>(GetRawPtr(c_MVM->OwnerSpace())))->ColVectorSpace();
+  SmartPtr<const DenseVectorSpace> c_d_vec_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(c_vec_space));
+  SmartPtr<const VectorSpace> d_vec_space = (dynamic_cast<const MultiVectorMatrixSpace*>(GetRawPtr(d_MVM->OwnerSpace())))->ColVectorSpace();
+  SmartPtr<const DenseVectorSpace> d_d_vec_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(d_vec_space));
 
+  const std::vector<Index> h_intervalIDs = h_d_vec_space->GetIntegerMetaData("intervalID");
+  const std::vector<Index> h_parameterIDs = h_d_vec_space->GetIntegerMetaData("parameter");
 
   //  retval->SetVector(k, *retvec);
-
-
+  for (int i=0; i<h_intervalIDs.size(); i++) {
+    printf("h_vec_space intervalIDs[%d]: %d  \n",i,h_intervalIDs[i]);
+    printf("h_vec_space parameterIDs[%d]: %d  \n",i,h_parameterIDs[i]);
+  }
 
   // initialize rhs_matrix
 
@@ -1211,9 +1252,10 @@ SmartPtr<Matrix> LinearizeKKT::getShiftedRHS(SmartPtr<IpoptApplication> app) con
   //  Index moep = getTotConstrCount(app);
 
   //  return dynamic_cast<Matrix*>(GetRawPtr(retval));
+  return NULL;
 }
 
-SmartPtr<Matrix> LinearizeKKT::getShiftedSensitivities(SmartPtr<IpoptApplication> app) const
+SmartPtr<Matrix> LinearizeKKT::getShiftedSensitivities(SmartPtr<IpoptApplication> app,const Index & interval) const
 {
   SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
   SmartPtr<MultiVectorMatrix> mv_sens = dynamic_cast<MultiVectorMatrix*>(GetRawPtr(sens_matrix));
@@ -1332,7 +1374,7 @@ SmartPtr<Matrix> getSensitivityMatrix(SmartPtr<IpoptApplication> app)
   SmartPtr<const Matrix> opt_jac_c_p = orig_nlp->jac_c_p(*x);
   SmartPtr<const Matrix> opt_jac_d_p = orig_nlp->jac_d_p(*x);
   SmartPtr<const Matrix> opt_h_p = orig_nlp->h_p(*x, 1.0, *y_c, *y_d);
-  //  opt_jac_c_p->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "opt_jac_c_p");
+  //opt_jac_c_p->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "opt_jac_c_p");
   //opt_jac_d_p->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "opt_jac_d_p");
   //opt_h_p->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "opt_h_p");
 
@@ -1429,7 +1471,7 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   SplitDecision resulting_split = pickfirst->decideSplitControl(splitchoices);
   SmartPtr<const Vector> x = app->IpoptDataObject()->curr()->x();
   ParameterShift* shifter = assignShiftMethod(options);
-  SmartPtr<Matrix> shifted_rhs = (shifter)->getShiftedRHS(app);
+  SmartPtr<Matrix> shifted_rhs = (shifter)->getShiftedRHS(app,1);
 
   printf("\nproposed for split: intervalID: %d parameter: %d\n",resulting_split.intervalID,resulting_split.parameterID);
 
