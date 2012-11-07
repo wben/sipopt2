@@ -597,6 +597,14 @@ namespace Ipopt
       para_integer_md_["parameter"] = parameter_vec;
       }
 
+    const Index* con_intervalID = suffix_handler_->GetIntegerSuffixValues("intervalID", AmplSuffixHandler::Constraint_Source);
+    if (m>0 && con_intervalID) {
+      std::vector<int> con_intervalID_vec(m);
+      for (int k=0; k<m; ++k) {
+        con_intervalID_vec[k] = con_intervalID[k];
+      }
+      con_integer_md_["intervalID"] = con_intervalID_vec;
+    }
 
     if (var_string_md_.size() > 0 || var_integer_md_.size() > 0 || var_numeric_md_.size() > 0
         || para_string_md_.size() > 0 || para_integer_md_.size() > 0 || para_numeric_md_.size() > 0

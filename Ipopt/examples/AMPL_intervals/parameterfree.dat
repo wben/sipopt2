@@ -45,6 +45,21 @@ for {i in fe}
 let h[i] := 1/nfe ;
 }
 
+# tag equations for interval assignment
+let {kk in int, i in fe diff{1},j in cp} fecolcxAL[kk,i,j].intervalID := kk;
+let {kk in int, i in fe diff{1},j in cp} fecolcxAU[kk,i,j].intervalID := kk;
+let {kk in int, i in fe diff{1},j in cp} fecolcxBL[kk,i,j].intervalID := kk;
+let {kk in int, i in fe diff{1},j in cp} fecolcxBU[kk,i,j].intervalID := kk;
+
+let {kk in int, i in 1..1,j in cp} fecolxAL0[kk,i,j].intervalID := kk;
+let {kk in int, i in 1..1,j in cp} fecolxAU0[kk,i,j].intervalID := kk;
+let {kk in int, i in 1..1,j in cp} fecolxBL0[kk,i,j].intervalID := kk;
+let {kk in int, i in 1..1,j in cp} fecolxBU0[kk,i,j].intervalID := kk;
+
+let {kk in int} xCU_def[kk].intervalID := kk;
+let {kk in int} xCmax[kk].intervalID := kk;
+let {kk in int} xBmin_eqn[kk].intervalID := kk;
+
 
 
 

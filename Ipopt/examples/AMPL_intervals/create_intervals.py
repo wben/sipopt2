@@ -250,7 +250,7 @@ def run():
  #       pUvalues = [1.8, 1.8]
                     info = AmplSet(ampl_script, pLnames, pUnames, pLvalues, pUvalues,bm,sc,bv,q)
     #info.randomize(2)
-                    info.branch_controlwise(3)
+                    info.branch_controlwise(2)
 
 if __name__=='__main__':
     run()
