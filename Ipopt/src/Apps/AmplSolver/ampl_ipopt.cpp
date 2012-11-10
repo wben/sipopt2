@@ -251,13 +251,19 @@ public:
   bool assignIntAndParaDepAttr(const Index& interval,const Index& column);
   SmartPtr<const DenseVector> extractColumn(SmartPtr<const Matrix> original,const Index& column) const;
   SmartPtr<const DenseVector> expandVector(SmartPtr<const DenseVector> original,const std::vector<Index>& indices, const Index& large_dim) const;
+  SmartPtr<const DenseVector> expandVector(SmartPtr<const Vector> original,const std::vector<Index>& indices, const Index& large_dim) const;
   SmartPtr<const DenseVector> expandVector(SmartPtr<const DenseVector> original, const Index& large_dim, const Index& start_idx) const;
+  SmartPtr<const DenseVector> expandVector(SmartPtr<const Vector> original, const Index& large_dim, const Index& start_idx) const;
   SmartPtr<const DenseVector> shrinkVector(SmartPtr<const DenseVector> original,const std::vector<Index>& indices) const;
   SmartPtr<const DenseVector> shrinkVector(SmartPtr<DenseVector> original,const std::vector<Index>& indices) const;
-  Number computeRMultS() const;
-  Number computeSMultS() const;
+  SmartPtr<const Vector> shrinkVector(SmartPtr<const Vector> original,const std::vector<Index>& indices) const;
+  SmartPtr<const Vector> shrinkVector(SmartPtr<Vector> original,const std::vector<Index>& indices) const;
+
+  Number computeRMultS(SmartPtr<IpoptApplication> app) const;
+  Number computeSMultS(SmartPtr<IpoptApplication> app) const;
   /*  SmartPtr<const DenseVector> computeR() const;*/ // not neccessary for x_0=0 and 0 steps.
-  SmartPtr<const DenseVector> computeS() const;
+  SmartPtr<const DenseVector> computeS(SmartPtr<IpoptApplication> app) const;
+  SmartPtr<const DenseVector> computeDMultYrhs(SmartPtr<IpoptApplication> app) const;
   SplitDecision decideInterval(const std::vector<SplitApproximation>& approximates) const;
   /*  std::vector<SplitChoice>getChoicesFromApprox(const std::vector<SplitApproximation>& approx) const;
   const Number* getExpandedRHSValues() const;
@@ -1386,7 +1392,7 @@ SmartPtr<const DenseVector> LinearizeKKTWithMINRES::extractColumn(SmartPtr<const
   return dynamic_cast<const DenseVector*>(GetRawPtr(retval));
 }
 
-/* expand Vector original from smaller (old) dim to large_dim, with the vector indices listing at which indices in the new vector the old values are to be found */
+/* expand Vector original from smaller (old) dim to large_dim, with the vector indices listing at which indices in the new vector the old values are to be found */  // disabled due to overloading issues
 SmartPtr<const DenseVector> LinearizeKKTWithMINRES::expandVector(SmartPtr<const DenseVector> original,const std::vector<Index>& indices, const Index& large_dim) const
 {
   const Index small_dim = indices.size();
@@ -1420,20 +1426,18 @@ SmartPtr<const DenseVector> LinearizeKKTWithMINRES::expandVector(SmartPtr<const 
   return NULL;
 }
 
-/*expand Vector original from smaller (old) dim to large_dim, inserting the original values as a dense block at start_idx in the new vector*/
-SmartPtr<const DenseVector> LinearizeKKTWithMINRES::expandVector(SmartPtr<const DenseVector> original,const Index& large_dim, const Index& start_idx) const
+SmartPtr<const DenseVector> LinearizeKKTWithMINRES::expandVector(SmartPtr<const Vector> original,const std::vector<Index>& indices, const Index& large_dim) const
 {
-  const Index small_dim = original->Dim();
-//  printf("\nexpandVector(): small_dim = %d   large_dim = %d   start_idx = %d",small_dim,large_dim,start_idx);
+  const Index small_dim = indices.size();
+//  printf("\nexpandVector(): small_dim = %d   large_dim = %d",small_dim,large_dim);
   assert(large_dim>=small_dim);
 
-  if (large_dim==small_dim) {
-    printf("\nLinearizeKKTWithMINRES::expandVector(): WARNING: called to expand a vector to original size.");
-    return original;
-  } else {
+//    printf("\n");
+//    for (int j=0;j<indices.size();j++)
+//      printf("\nindices[%d] = %d",j,indices[j]);
     Index* exppos = new Index[small_dim];
     for (int i=0;i<small_dim;i++)
-      exppos[i]=i+start_idx;
+      exppos[i]=indices[i];
 //    printf("\n");
 //    for (int i=0;i<small_dim;i++)
 //      printf("\nexppos[%d] = %d",i,exppos[i]);
@@ -1447,9 +1451,39 @@ SmartPtr<const DenseVector> LinearizeKKTWithMINRES::expandVector(SmartPtr<const 
 
     return dynamic_cast<const DenseVector*>(GetRawPtr(new_vec));
   }
-  printf("\nLinearizeKKTWithMINRES::expandVector(): Unknown ERROR.");
-  return NULL;
+
+/*expand Vector original from smaller (old) dim to large_dim, inserting the original values as a dense block at start_idx in the new vector*/
+SmartPtr<const DenseVector> LinearizeKKTWithMINRES::expandVector(SmartPtr<const DenseVector> original,const Index& large_dim, const Index& start_idx) const
+{
+  return expandVector(dynamic_cast<const Vector*>(GetRawPtr(original)),large_dim,start_idx);
 }
+
+
+/*expand Vector original from smaller (old) dim to large_dim, inserting the original values as a dense block at start_idx in the new vector*/
+SmartPtr<const DenseVector> LinearizeKKTWithMINRES::expandVector(SmartPtr<const Vector> original,const Index& large_dim, const Index& start_idx) const
+{
+  const Index small_dim = original->Dim();
+//  printf("\nexpandVector(): small_dim = %d   large_dim = %d   start_idx = %d",small_dim,large_dim,start_idx);
+  assert(large_dim>=small_dim);
+
+  Index* exppos = new Index[small_dim];
+  for (int i=0;i<small_dim;i++)
+    exppos[i]=i+start_idx;
+  //    printf("\n");
+  //    for (int i=0;i<small_dim;i++)
+  //      printf("\nexppos[%d] = %d",i,exppos[i]);
+
+  SmartPtr<ExpansionMatrixSpace> em_space = new ExpansionMatrixSpace(large_dim,small_dim,exppos);
+  SmartPtr<ExpansionMatrix> em = em_space->MakeNewExpansionMatrix();
+  SmartPtr<DenseVectorSpace> expanded_space = new DenseVectorSpace(large_dim);
+  SmartPtr<Vector> new_vec = expanded_space->MakeNew();
+
+  em->MultVector(1.0,*original,0.0,*new_vec);
+
+  return dynamic_cast<const DenseVector*>(GetRawPtr(new_vec));
+
+}
+
 
 /* shrink Vector original from larger (old) dim to smaller dim, with the vector indices listing which indices from the old vector to keep*/
 SmartPtr<const DenseVector> LinearizeKKTWithMINRES::shrinkVector(SmartPtr<const DenseVector> original, const std::vector<Index>& indices) const
@@ -1493,28 +1527,70 @@ SmartPtr<const DenseVector> LinearizeKKTWithMINRES::shrinkVector(SmartPtr<DenseV
   return shrinkVector(c_original,indices);
 }
 
-Number LinearizeKKTWithMINRES::computeRMultS() const
-{ /*
-  Number retval;
-  SmartPtr<const DenseVector> S = computeS();
-  retval = rhs_i_->Dot(*S);
+/* shrink Vector original from larger (old) dim to smaller dim, with the vector indices listing which indices from the old vector to keep*/
+SmartPtr<const Vector> LinearizeKKTWithMINRES::shrinkVector(SmartPtr<const Vector> original, const std::vector<Index>& indices) const
+{
+  const Index large_dim = original->Dim();
+  const Index small_dim = indices.size();
+//  printf("\nshrinkVector(): large_dim = %d   small_dim = %d",large_dim,small_dim);
+  assert(large_dim>=small_dim);
+  if (large_dim==small_dim) {
+    printf("\nLinearizeKKTWithMINRES::shrinkVector(const): WARNING: called to shrink a vector to original size.");
+    return original;
+  } else {
+//    printf("\n");
+//    for (int j=0;j<indices.size();j++)
+//      printf("\nindices[%d] = %d",j,indices[j]);
+    Index* exppos = new Index[small_dim];
+    for (int i=0;i<small_dim;i++)
+      exppos[i]=indices[i];
+//    printf("\n");
+//    for (int i=0;i<small_dim;i++)
+//      printf("\nexppos[%d] = %d",i,exppos[i]);
 
-  return retval; */
+    SmartPtr<ExpansionMatrixSpace> em_space = new ExpansionMatrixSpace(large_dim,small_dim,exppos);
+    SmartPtr<ExpansionMatrix> em = em_space->MakeNewExpansionMatrix();
+    SmartPtr<DenseVectorSpace> expanded_space = new DenseVectorSpace(small_dim);
+    SmartPtr<Vector> new_vec = expanded_space->MakeNew();
+
+    em->TransMultVector(1.0,*original,0.0,*new_vec);
+
+    return dynamic_cast<const Vector*>(GetRawPtr(new_vec));
+  }
+  printf("\nLinearizeKKTWithMINRES::shrinkVector(const): Unknown ERROR.");
+  return NULL;
 }
 
-Number LinearizeKKTWithMINRES::computeSMultS() const
-{ /*
+/* same as shrinkVector, just with nonconst DenseVector entering*/
+SmartPtr<const Vector> LinearizeKKTWithMINRES::shrinkVector(SmartPtr<Vector> original, const std::vector<Index>& indices) const
+{
+  SmartPtr<const Vector> c_original = dynamic_cast<const Vector*>(GetRawPtr(original));
+
+  return shrinkVector(c_original,indices);
+}
+
+Number LinearizeKKTWithMINRES::computeRMultS(SmartPtr<IpoptApplication> app) const
+{
+  Number retval;
+  SmartPtr<const DenseVector> S = computeS(app);
+  retval = rhs_i_->Dot(*S);
+
+  return retval;
+}
+
+Number LinearizeKKTWithMINRES::computeSMultS(SmartPtr<IpoptApplication> app) const
+{
   Number retval;
   Number squareval;
 
-  SmartPtr<const DenseVector> S = computeS();
+  SmartPtr<const DenseVector> S = computeS(app);
 
   retval = S->Dot(*S);
   squareval = (S->Nrm2());
   squareval = squareval*squareval;
   if (retval==squareval)
     printf("\nLinearizeKKTWithMINRES::computeSMultS(): Both ways of computing SMultS work fine.");
-    return retval; */
+    return retval;
 }
 
 /* SmartPtr<const DenseVector> LinearizeKKTWithMINRES::computeR() const
@@ -1522,50 +1598,180 @@ Number LinearizeKKTWithMINRES::computeSMultS() const
 // not needed for x_0 = 0 and 0 steps.
 } */
 
-SmartPtr<const DenseVector> LinearizeKKTWithMINRES::computeS() const
+SmartPtr<const DenseVector> LinearizeKKTWithMINRES::computeS(SmartPtr<IpoptApplication> app) const
 {
+  //initialize and set values where no further calculations are needed
   // static non-control parts of S equal static rhs part
-  SmartPtr<const DenseVector> retval_st_h = rhs_static_h_;
-  SmartPtr<const DenseVector> retval_st_c = rhs_static_c_;
-  SmartPtr<const DenseVector> retval_st_d = rhs_static_d_;
+  SmartPtr<const DenseVector> retval_st_h = expandVector(rhs_static_h_,rhs_dim_,0);
+  SmartPtr<const DenseVector> retval_st_c = expandVector(rhs_static_c_,rhs_dim_,n_x_+n_u_);
+  SmartPtr<const DenseVector> retval_st_d = expandVector(rhs_static_d_,rhs_dim_,n_x_+n_u_+n_c_);
 
-  // setup u part
+  // init u part
   SmartPtr<DenseVector> retval_u = dynamic_cast<DenseVector*>(rhs_u_->MakeNew());
 
-  // get (W_i,shift times y_shift) with i= (shift, u)
-  //  SmartPtr<DenseVectorSpace> w_extr_space = new DenseVectorSpace(lhs_h_->NCols());
-  SmartPtr<const DenseVector> y_shift_large = expandVector(rhs_shift_h_,shift_x_indices_,lhs_h_->NCols());
-  SmartPtr<DenseVector> w_extractor = dynamic_cast<DenseVector*>(y_shift_large->MakeNew());
-  lhs_h_->MultVector(1.0,*y_shift_large,0.0,*w_extractor);
-
-
-  // map result back to get u and shift part seperately for the appropriate parts of S
-  //  SmartPtr<const DenseVector> u_part_wy = shrinkVector(dynamic_cast);
-
-
   // upper shifted parts of S equal shift rhs part
-  SmartPtr<const DenseVector> retval_ush_h = rhs_shift_h_;
-  SmartPtr<const DenseVector> retval_ush_c =  rhs_shift_c_;
-  SmartPtr<const DenseVector> retval_ush_d =  rhs_shift_d_;
+  SmartPtr<const DenseVector> retval_ush_h = expandVector(rhs_shift_h_,rhs_dim_,static_x_indices_.size());
+  SmartPtr<const DenseVector> retval_ush_c = expandVector(rhs_shift_c_,rhs_dim_,n_x_+n_u_+static_c_indices_.size());
+  SmartPtr<const DenseVector> retval_ush_d = expandVector(rhs_shift_d_,rhs_dim_,n_x_+n_u_+n_c_+static_d_indices_.size());
 
-  // setup lower shifted h part assigned to x
+  // init lower shifted h part assigned to x
   SmartPtr<DenseVector> retval_lsh_h = dynamic_cast<DenseVector*>(rhs_shift_h_->MakeNew());
-
-
-
-
-
-  // setup lower shifted c part
+  // init lower shifted c part
   SmartPtr<DenseVector> retval_lsh_c = dynamic_cast<DenseVector*>(rhs_shift_c_->MakeNew());
-  // setup lower shifted d part
+  // init lower shifted d part
   SmartPtr<DenseVector> retval_lsh_d = dynamic_cast<DenseVector*>(rhs_shift_d_->MakeNew());
 
+  // get (lhs_i,shift times rhs_i) with i= (shift_h, u)
+  SmartPtr<const DenseVector> tmp_rhs = expandVector(rhs_shift_h_,shift_x_indices_,lhs_h_->NCols());
+  SmartPtr<DenseVector> extractor = dynamic_cast<DenseVector*>(tmp_rhs->MakeNew());
+  lhs_h_->MultVector(1.0,*tmp_rhs,0.0,*extractor);
+
+  // map result back to get u and shift part seperately for the appropriate parts of S
+  SmartPtr<const DenseVector> extr_u_part = shrinkVector(extractor,u_indices_);
+  retval_u->AddOneVector(1.0,*extr_u_part,0.0);
+  SmartPtr<const DenseVector> extr_shift_part = shrinkVector(extractor,shift_x_indices_);
+  retval_lsh_h->AddOneVector(1.0,*extr_shift_part,0.0);
 
 
+  //get (lhs_c_shift^T times rhs_i) parts with i= (u, shift_c)
+  tmp_rhs = expandVector(rhs_shift_c_,shift_c_indices_,lhs_c_->NRows());
+  SmartPtr<DenseVectorSpace> extractor_space = new DenseVectorSpace(lhs_c_->NCols());
+  extractor = extractor_space->MakeNewDenseVector();
+  printf("\nlhs_c_->NCols() = %d, lhs_c_->NRows() = %d, tmp_rhs->Dim() = %d, extractor->Dim() = %d",lhs_c_->NCols(),lhs_c_->NRows(),tmp_rhs->Dim(),extractor->Dim());
+  printf("\n\n");
+  tmp_rhs->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "tmp_rhs");
+  printf("\n\n");
+  lhs_c_->TransMultVector(1.0,*tmp_rhs,0.0,*extractor);
 
+  //map results back to get u and shift part seperately for the appropriate parts of S
+  extr_u_part = shrinkVector(extractor,u_indices_);
+  retval_u->AddOneVector(1.0,*extr_u_part,1.0);
+  extr_shift_part = shrinkVector(extractor,shift_x_indices_);
+  retval_lsh_h->AddOneVector(1.0,*extr_shift_part,1.0);
 
-  return NULL;
+  //get (lhs_d_shift^T times rhs_i) parts with i= (u, shift_d)
+  tmp_rhs = expandVector(rhs_shift_d_,shift_d_indices_,lhs_d_->NRows());
+  extractor_space = new DenseVectorSpace(lhs_d_->NCols());
+  extractor = extractor_space->MakeNewDenseVector();
+  lhs_d_->TransMultVector(1.0,*tmp_rhs,0.0,*extractor);
+
+  //map result back to get u and shift part seperately for the appropriate parts of S
+  extr_u_part = shrinkVector(extractor,u_indices_);
+  retval_u->AddOneVector(1.0,*extr_u_part,1.0);
+  extr_shift_part = shrinkVector(extractor,shift_x_indices_);
+  retval_lsh_h->AddOneVector(1.0,*extr_shift_part,1.0);
+
+  //get (lhs_c_shift times rhs_shift_c) part
+  tmp_rhs = expandVector(rhs_shift_h_,shift_x_indices_,lhs_c_->NCols());
+  extractor = dynamic_cast<DenseVector*>(tmp_rhs->MakeNew());
+  lhs_c_->TransMultVector(1.0,*tmp_rhs,0.0,*extractor);
+  //map result back to the appropriate parts of S
+  extr_shift_part = shrinkVector(extractor,shift_c_indices_);
+  retval_lsh_c->AddOneVector(1.0,*extr_shift_part,0.0);
+
+  //get (lhs_d_shift times rhs_shift_d) part
+  tmp_rhs = expandVector(rhs_shift_h_,shift_x_indices_,lhs_d_->NCols());
+  extractor = dynamic_cast<DenseVector*>(tmp_rhs->MakeNew());
+  lhs_d_->TransMultVector(1.0,*tmp_rhs,0.0,*extractor);
+  //map result back to the appropriate parts of S
+  extr_shift_part = shrinkVector(extractor,shift_d_indices_);
+  retval_lsh_d->AddOneVector(1.0,*extr_shift_part,0.0);
+
+  // get D_y_orig part
+  extr_shift_part = computeDMultYrhs(app);
+  extr_shift_part->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "D_part_slow");
+
+  return extr_shift_part;
 }
+SmartPtr<const DenseVector> LinearizeKKTWithMINRES::computeDMultYrhs(SmartPtr<IpoptApplication> app) const
+{
+  // get KKT matrix
+  SmartPtr<IpoptAlgorithm> alg = app->AlgorithmObject();
+  SmartPtr<PDSearchDirCalculator> pd_search;
+  pd_search = dynamic_cast<PDSearchDirCalculator*>(GetRawPtr(alg->SearchDirCalc()));
+  SmartPtr<PDSystemSolver> pd_solver = pd_search->PDSolver();
+
+  // set up iterates vector and initialize - will be rhs for linear system
+  SmartPtr<IteratesVector> it_vec = app->IpoptDataObject()->curr()->MakeNewIteratesVector();
+  it_vec->Set(0.0);
+
+  // set up static_h,shift_h and u parts of rhs iterates vector
+  SmartPtr<DenseVectorSpace> orig_x_space = new DenseVectorSpace(n_x_+n_u_);
+  SmartPtr<Vector> orig_x = orig_x_space->MakeNew();
+  SmartPtr<const DenseVector> o_static = expandVector(rhs_static_h_,static_x_indices_,n_x_+n_u_);
+  SmartPtr<const DenseVector> o_shift = expandVector(rhs_shift_h_,shift_x_indices_,n_x_+n_u_);
+  // fill static and shift values into orig_x
+  orig_x->AddTwoVectors(1.0,*o_static,1.0,*o_shift,0.0);
+  // add control values
+  o_static = expandVector(rhs_u_,u_indices_,n_x_+n_u_);
+  orig_x->AddOneVector(1.0,*o_static,1.0);
+  // set values into iterates vector
+  it_vec->Set_x_NonConst(*orig_x);
+
+  // set up static_c and shift_c parts of rhs iterates vector
+  SmartPtr<DenseVectorSpace> orig_c_space = new DenseVectorSpace(n_c_);
+  SmartPtr<Vector> orig_c = orig_c_space->MakeNew();
+  o_static = expandVector(rhs_static_c_,static_c_indices_,n_c_);
+  o_shift = expandVector(rhs_shift_c_,shift_c_indices_,n_c_);
+  // fill static and shift values into orig_c
+  orig_c->AddTwoVectors(1.0,*o_static,1.0,*o_shift,0.0);
+  // set values into iterates vector
+  it_vec->Set_y_c_NonConst(*orig_c);
+
+  // set up static_d and shift_d parts of rhs iterates vector
+  SmartPtr<DenseVectorSpace> orig_d_space = new DenseVectorSpace(n_d_);
+  SmartPtr<Vector> orig_d = orig_d_space->MakeNew();
+  o_static = expandVector(rhs_static_d_,static_d_indices_,n_d_);
+  o_shift = expandVector(rhs_shift_d_,shift_d_indices_,n_d_);
+  // fill static and shift values into orig_d
+  orig_d->AddTwoVectors(1.0,*o_static,1.0,*o_shift,0.0);
+  // set values into iterates vector
+  it_vec->Set_y_d_NonConst(*orig_d);
+
+  // do actual backsolve
+  SmartPtr<IteratesVector> preretval = it_vec->MakeNewIteratesVector();
+  pd_solver->Solve(1.0, 0.0, *it_vec, *preretval);
+
+  // get (K^-1 times rhs) u part and eliminate non-u part elements
+  SmartPtr<const Vector> retval_x = preretval->x();
+  retval_x = shrinkVector(retval_x,u_indices_);
+  retval_x = dynamic_cast<const Vector*>(GetRawPtr(expandVector(retval_x,u_indices_,lhs_h_->NCols())));
+  SmartPtr<const Vector> retval_c;  // = preretval->y_c();
+  SmartPtr<const Vector> retval_d;  // = preretval->y_d();
+
+  // multiply with appropriate lhs parts
+  SmartPtr<DenseVectorSpace> retval_nc_space = new DenseVectorSpace(lhs_h_->NRows());
+  SmartPtr<Vector> retval_x_nonconst = retval_nc_space->MakeNew();
+  lhs_h_->MultVector(1.0,*retval_x,0.0,*retval_x_nonconst);
+  retval_nc_space = new DenseVectorSpace(lhs_c_->NRows());
+  SmartPtr<Vector> retval_c_nonconst = retval_nc_space->MakeNew();
+  lhs_c_->MultVector(1.0,*retval_x,0.0,*retval_c_nonconst);
+  retval_nc_space = new DenseVectorSpace(lhs_d_->NRows());
+  SmartPtr<Vector> retval_d_nonconst = retval_nc_space->MakeNew();
+  lhs_d_->MultVector(1.0,*retval_x,0.0,*retval_d_nonconst);
+
+  // reduce to the desired quantities
+  retval_x = shrinkVector(retval_x_nonconst,shift_x_indices_);
+  retval_c = shrinkVector(retval_c_nonconst,shift_c_indices_);
+  retval_d = shrinkVector(retval_d_nonconst,shift_d_indices_);
+
+  //map upwards to rhs dimension
+  Index abs_pos = rhs_dim_-retval_x->Dim()-retval_c->Dim()-retval_d->Dim();
+  retval_x = dynamic_cast<const Vector*>(GetRawPtr(expandVector(retval_x,rhs_dim_,abs_pos)));
+  abs_pos += shift_x_indices_.size();
+  retval_c = dynamic_cast<const Vector*>(GetRawPtr(expandVector(retval_c,rhs_dim_,abs_pos)));
+  abs_pos += shift_c_indices_.size();
+  retval_d = dynamic_cast<const Vector*>(GetRawPtr(expandVector(retval_d,rhs_dim_,abs_pos)));
+
+  // add all results to get resulting D-part of S
+  SmartPtr<DenseVectorSpace> retval_space = new DenseVectorSpace(rhs_dim_);
+  SmartPtr<DenseVector> retval = retval_space->MakeNewDenseVector();
+  retval->AddTwoVectors(1.0,*retval_x,1.0,*retval_c,0.0);
+  retval->AddOneVector(1.0,*retval_d,1.0);
+
+  return dynamic_cast<const DenseVector*>(GetRawPtr(retval));
+}
+
 
 SplitDecision LinearizeKKTWithMINRES::decideInterval(const std::vector<SplitApproximation>& approximates) const
 {
@@ -1804,7 +2010,7 @@ SplitApproximation LinearizeKKTWithMINRES::applyAlgorithmOnInterval(SmartPtr<Ipo
   for (Index j=0;j<n_p_;j++) {
     if (assignIntAndParaDepAttr(interval,j)) {
       // compute the solution of the MINRES-Step
-      const Number steplength = computeRMultS()*computeSMultS();
+      const Number steplength = computeRMultS(app)*computeSMultS(app);
       /*      printf("\n\n");
       char buffer[16];
       sprintf(buffer,"rhs_i_[%d]",j);
