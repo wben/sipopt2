@@ -587,7 +587,6 @@ namespace Ipopt
       "If selected, the algorithm will print the list of all available "
       "algorithmic options with some documentation before solving the "
       "optimization problem.");
-    //////////////////////////////////////////////////////////////////////////////////////////////
     roptions->AddStringOption4(
       "branchmode",
       "Criterion used for determination of to be branched interval.",
@@ -595,7 +594,7 @@ namespace Ipopt
       "smallest", "smallest value interval is branched",
       "largest", "largest value interval is branched",
       "abs_largest", "largest absolute value interval is branched",
-      "random", "randomly pick parameter and "
+      "random", "randomly pick parameter and interval"
       "The algorithm will decide which intervals and parameters to branch "
       "checking the attribute determined by the branchmode setting. The "
       "values compared can be either interval bound values, scalar "
@@ -617,7 +616,33 @@ namespace Ipopt
       "The branch algorithm will calculate the kind of value "
       "determined here to check the branching criterion "
       "specified in option \"branchmode\". ");
-    //////////////////////////////////////////////////////////////////////////////////////////////
+    roptions->AddStringOption3(
+      "sensemode",
+      "Determine which sensitivity to consider for split decisions.",
+      "MINRES",
+      "MINRES", "shift using MINRES, split using linearized KKT",
+      "GMRES", "shift using MINRES, split using linearized KKT",
+      "control", "determine splits with largest effect on a control value",
+      "\"MINRES\" will approximate the results of the split by a linearization of the KKT "
+      "conditions combined with a preconditionning step. \"control\" will calculate the "
+      "split with largest effect on the control specified in option \"ctrl_name\" or "
+      "\"ctrl_index\". ");
+    roptions->AddStringOption1(
+      "ctrl_name",
+      "Name of control considered in case of control sensitivity branching.",
+      "",
+      "*", "Any name of a control used in the input model",
+      "NOTE: This option only works when the control names are made available through "
+      "the AmplSuffixHandler interface and controlwise branching is chosen (option "
+      " \"sensemode\" set to \"control\").");
+    roptions->AddIntegerOption(
+      "ctrl_index",
+      "Index of control considered in case of contol sensitivity branching (starts at 0).",
+      0,
+      "Instead of giving the model name of the control value to be considered in"
+      "controlwise branching, the index of the control, i.e. number of first occurance in the model "
+      "can also be used for specification, starting at 0.\n"
+      "NOTE: This can only be used, when the option \"sensemode\" is set to \"control\".");
 
 #if COIN_IPOPT_VERBOSITY > 0
 

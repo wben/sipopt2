@@ -57,7 +57,6 @@ let {kk in int, i in 1..1,j in cp} fecolxBL0[kk,i,j].intervalID := kk;
 let {kk in int, i in 1..1,j in cp} fecolxBU0[kk,i,j].intervalID := kk;
 
 let {kk in int} xCU_def[kk].intervalID := kk;
-let {kk in int} xCmax[kk].intervalID := kk;
 let {kk in int} xBmin_eqn[kk].intervalID := kk;
 
 
