@@ -132,6 +132,8 @@ class AmplSet:
             branchvalue = 'branchvalue product\n'
         if alg == 'control':
             algorithm = 'sensemode control\n'
+        elif alg == 'GMRES':
+            algorithm = 'sensemode GMRES\n'
         else:
             algorithm = 'sensemode MINRES\n'
         control = ctrl +' '
@@ -263,7 +265,7 @@ def run():
  #       pUvalues = [1.8, 1.8]
                     ctrl = 0
                     ctrlt = 'ctrl_index'
-                    alg = 'MINRES'
+                    alg = 'GMRES'
                     info = AmplSet(ampl_script, pLnames, pUnames, pLvalues, pUvalues,bm,sc,bv,ctrl,ctrlt,alg,q)
     #info.randomize(2)
                     info.branch_controlwise(1)

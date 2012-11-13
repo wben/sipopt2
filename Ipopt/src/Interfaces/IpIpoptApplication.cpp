@@ -621,7 +621,7 @@ namespace Ipopt
       "Determine which sensitivity to consider for split decisions.",
       "MINRES",
       "MINRES", "shift using MINRES, split using linearized KKT",
-      "GMRES", "shift using MINRES, split using linearized KKT",
+      "GMRES", "shift using GMRES, split using linearized KKT",
       "control", "determine splits with largest effect on a control value",
       "\"MINRES\" will approximate the results of the split by a linearization of the KKT "
       "conditions combined with a preconditionning step. \"control\" will calculate the "
