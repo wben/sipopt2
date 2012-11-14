@@ -148,14 +148,6 @@ struct SplitDecision
   Index parameterID;
 };
 
-struct VectorSet
-{
-  SmartPtr<IteratesVector> top;
-  SmartPtr<DenseVector> x;
-  SmartPtr<DenseVector> y_d;
-  SmartPtr<DenseVector> y_c;
-};
-
 struct SplitApproximation
 {
   Index intervalID;
@@ -352,7 +344,8 @@ private:
   */
 
 };
-
+/* forward declaration*/
+class ShiftVector;
 class LinKKTFaster : public SplitAlgorithm
 {
 public:
@@ -375,18 +368,16 @@ public:
   SmartPtr<DenseVector> expand(SmartPtr<DenseVector> original, const Index& large_dim, const Index& start_idx) const;
   SmartPtr<DenseVector> expand(SmartPtr<IteratesVector> original, const Index& large_dim, const Index& start_idx) const;
   SmartPtr<DenseVector> shrink(SmartPtr<DenseVector> original,const std::vector<Index>& indices) const;
-  SmartPtr<DenseVector> resetValuesAt(SmartPtr<DenseVector> target, std::vector<Index>indices) const;
-  Number computeRMultS(SmartPtr<IpoptApplication> app,const VectorSet& target) const;
-  Number computeSMultS(SmartPtr<IpoptApplication> app,const VectorSet& target) const;
-  /*  SmartPtr<const DenseVector> computeR() const;*/ // not neccessary for x_0=0 and 0 steps.
-  VectorSet computeS(SmartPtr<IpoptApplication> app,const VectorSet& target) const;
-  VectorSet scaleVectorSet(const VectorSet& target,const Number& factor) const;
-  VectorSet computeDMultYrhs(SmartPtr<IpoptApplication> app,const VectorSet& target) const;
-  VectorSet undoConditionning(SmartPtr<IpoptApplication> app, const VectorSet& target) const;
   SmartPtr<const DenseVector> computeDeltaP(const IntervalInfoSet& intervals,const Index& interval) const;
-  void printVectorSet(SmartPtr<IpoptApplication>app,const VectorSet& target, const std::string& label) const;
-  SmartPtr<DenseVector> transformVectorSet(const VectorSet& target) const;
+
   SplitDecision decideInterval(const std::vector<SplitApproximation>& approximates) const;
+  /*  SmartPtr<const DenseVector> computeR() const;*/ // not neccessary for x_0=0 and 0 steps.
+  Number computeRMultS(SmartPtr<IpoptApplication> app,SmartPtr<ShiftVector> target) const;
+  Number computeSMultS(SmartPtr<IpoptApplication> app,SmartPtr<ShiftVector> target) const;
+  SmartPtr<ShiftVector> computeS(SmartPtr<IpoptApplication> app,SmartPtr<ShiftVector> target) const;
+  SmartPtr<ShiftVector> computeDMultYrhs(SmartPtr<IpoptApplication> app,SmartPtr<ShiftVector> target) const;
+  SmartPtr<ShiftVector> undoConditionning(SmartPtr<IpoptApplication> app, SmartPtr<ShiftVector> target) const;
+
   /*  std::vector<SplitChoice>getChoicesFromApprox(const std::vector<SplitApproximation>& approx) const;
   const Number* getExpandedRHSValues() const;
 */
@@ -472,8 +463,11 @@ public:
                Index indent=0,
                const std::string& prefix="") const;
   Number Dot(const Vector &x) const;
+  Number Dot(const ShiftVector &x) const;
   Index Dim() const;
   void Set(Number alpha);
+  void AddOneVector(const Number& a,const ShiftVector& v1,const Number& c);
+  void AddTwoVectors(const Number& a,const ShiftVector& v1,const Number& b,const ShiftVector& v2,const Number& c);
   SmartPtr<ShiftVector> MakeNewShiftVector() const;
   //  SmartPtr<Vector> MakeNew() const; // disabled: no Vector child yet
   SmartPtr<IteratesVector>top() const;
@@ -911,9 +905,9 @@ ShiftVector::ShiftVector(SmartPtr<IteratesVector> top, SmartPtr<DenseVector> x, 
   Number* exp_values = new Number[dim_];
   Index abs_pos = 0;
 
-  const Number* top_x_val = dynamic_cast<const DenseVector*>(GetRawPtr(top_->x()))->Values();
-  const Number* top_y_c_val = dynamic_cast<const DenseVector*>(GetRawPtr(top_->y_c()))->Values();
-  const Number* top_y_d_val = dynamic_cast<const DenseVector*>(GetRawPtr(top_->y_d()))->Values();
+  const Number* top_x_val = dynamic_cast<const DenseVector*>(GetRawPtr(top->x()))->Values();
+  const Number* top_y_c_val = dynamic_cast<const DenseVector*>(GetRawPtr(top->y_c()))->Values();
+  const Number* top_y_d_val = dynamic_cast<const DenseVector*>(GetRawPtr(top->y_d()))->Values();
 
   const Number* x_val = x_->Values();
   const Number* y_c_val = y_c_->Values();
@@ -924,27 +918,39 @@ ShiftVector::ShiftVector(SmartPtr<IteratesVector> top, SmartPtr<DenseVector> x, 
   const Index top_y_d_dim = top_->y_d()->Dim();
 
   for (int i=0;i<top_x_dim;i++){
-    exp_values[abs_pos] = top_x_val[i];
+    exp_values[abs_pos] = 0;
+    if (top_x_val)
+      exp_values[abs_pos] = top_x_val[i];
     abs_pos++;
   }
   for (int i=0;i<top_y_c_dim;i++){
-    exp_values[abs_pos] = top_y_c_val[i];
+    exp_values[abs_pos] = 0;
+    if (top_y_c_val)
+      exp_values[abs_pos] = top_y_c_val[i];
     abs_pos++;
   }
   for (int i=0;i<top_y_d_dim;i++){
-    exp_values[abs_pos] = top_y_d_val[i];
+    exp_values[abs_pos] = 0;
+    if (top_y_d_val)
+      exp_values[abs_pos] = top_y_d_val[i];
     abs_pos++;
   }
   for (int i=0;i<x_dim_;i++){
-    exp_values[abs_pos] = x_val[i];
+    exp_values[abs_pos] = 0;
+    if (x_val)
+      exp_values[abs_pos] = x_val[i];
     abs_pos++;
   }
   for (int i=0;i<y_c_dim_;i++){
-    exp_values[abs_pos] = y_c_val[i];
+    exp_values[abs_pos] = 0;
+    if (y_c_val)
+      exp_values[abs_pos] = y_c_val[i];
     abs_pos++;
   }
   for (int i=0;i<y_d_dim_;i++){
-    exp_values[abs_pos] = y_d_val[i];
+    exp_values[abs_pos] = 0;
+    if (y_d_val)
+      exp_values[abs_pos] = y_d_val[i];
     abs_pos++;
   }
   exp_->SetValues(exp_values);
@@ -1025,8 +1031,64 @@ void ShiftVector::Print(const Journalist& jnlst, EJournalLevel level, EJournalCa
 
 Number ShiftVector::Dot(const Vector &x) const
 {
-  assert(x.Dim()!=dim_);
+  assert(x.Dim()==dim_);
   return exp_->Dot(x);
+}
+
+Number ShiftVector::Dot(const ShiftVector &x) const
+{
+  assert(x.Dim()==dim_);
+  SmartPtr<DenseVector> exp = x.getDVector();
+  return exp_->Dot(*exp);
+}
+void ShiftVector::AddOneVector(const Number& a,const ShiftVector& v1,const Number& c)
+{
+    /** Add one vector, y = a * v1 + c * y.  This is automatically
+     *  reduced to call AddTwoVectors.  */
+  AddTwoVectors(a,v1,0.0,*this,c);
+}
+
+void ShiftVector::AddTwoVectors(const Number& a,const ShiftVector& v1,const Number& b,const ShiftVector& v2,const Number& c)
+{
+   /** Add two vectors, y = a * v1 + b * v2 + c * y.  Here, this
+     *  vector is y */
+  if (!c)
+    Set(0.0);
+
+  if (a && b) {
+    SmartPtr<const Vector> top1_x = v1.top()->x();
+    SmartPtr<const Vector> top1_y_c = v1.top()->y_c();
+    SmartPtr<const Vector> top1_y_d = v1.top()->y_d();
+
+    SmartPtr<DenseVector> x1 = v1.x();
+    SmartPtr<DenseVector> y_c1 = v1.y_c();
+    SmartPtr<DenseVector> y_d1 = v1.y_d();
+
+    SmartPtr<DenseVector> x2 = v2.x();
+    SmartPtr<DenseVector> y_c2 = v2.y_c();
+    SmartPtr<DenseVector> y_d2 = v2.y_d();
+
+    SmartPtr<const Vector> top2_x = v2.top()->x();
+    SmartPtr<const Vector> top2_y_c = v2.top()->y_c();
+    SmartPtr<const Vector> top2_y_d = v2.top()->y_d();
+
+    SmartPtr<Vector> x = top()->x()->MakeNewCopy();
+    SmartPtr<Vector> y_c = top()->y_c()->MakeNewCopy();
+    SmartPtr<Vector> y_d = top()->y_d()->MakeNewCopy();
+
+    x->AddTwoVectors(a,*top1_x,b,*top2_x,c);
+    y_c->AddTwoVectors(a,*top1_y_c,b,*top2_y_c,c);
+    y_d->AddTwoVectors(a,*top1_y_d,b,*top2_y_d,c);
+
+    top_->Set_x_NonConst(*x);
+    top_->Set_y_c_NonConst(*y_c);
+    top_->Set_y_d_NonConst(*y_d);
+
+    x_->AddTwoVectors(a,*x1,b,*x2,c);
+    y_c_->AddTwoVectors(a,*y_c1,b,*y_c2,c);
+    y_d_->AddTwoVectors(a,*y_d1,b,*y_d2,c);
+  }
+
 }
 
 Index ShiftVector::Dim() const
@@ -2104,21 +2166,20 @@ SmartPtr<const DenseVector> LinearizeKKTWithMINRES::shrinkVector(SmartPtr<Vector
 Number LinearizeKKTWithMINRES::computeRMultS(SmartPtr<IpoptApplication> app) const
 {
   Number retval;
-  printf("\nLinearizeKKTWithMINRES::computeRMultS(SmartPtr<IpoptApplication> app) const");
+
   SmartPtr<const DenseVector> S = computeS(app);
   retval = rhs_i_->Dot(*S);
-
+  printf("\ncomputeRMultS: retval is %e", retval);
   return retval;
 }
 
 Number LinearizeKKTWithMINRES::computeSMultS(SmartPtr<IpoptApplication> app) const
 {
   Number retval;
-  Number squareval;
-  printf("\nLinearizeKKTWithMINRES::computeSMultS(SmartPtr<IpoptApplication> app) const");
+
   SmartPtr<const DenseVector> S = computeS(app);
   retval = S->Dot(*S);
-
+  printf("\ncomputeSMultS: retval is %e", retval);
   return retval;
 }
 
@@ -2324,7 +2385,7 @@ SmartPtr<const DenseVector> LinearizeKKTWithMINRES::computeDMultYrhs(SmartPtr<Ip
   retval->AddTwoVectors(1.0,*retval_x,1.0,*retval_c,0.0);
   retval->AddOneVector(1.0,*retval_d,1.0);
 
-  retval->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"DMult_slow");
+  //  retval->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"DMult_slow");
 
   return dynamic_cast<const DenseVector*>(GetRawPtr(retval));
 }
@@ -2537,16 +2598,17 @@ SplitApproximation LinearizeKKTWithMINRES::applyAlgorithmOnInterval(SmartPtr<Ipo
       if (assignIntAndParaDepAttr(interval,j)) {
 	// compute the solution of the MINRES-Step
 	z_postsplit_cond = rhs_i_->MakeNewCopy();
-	z_postsplit_cond->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"z_slow");
+	//	z_postsplit_cond->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"z_slow");
+	//	z_postsplit = computeS(app);
+	//z_postsplit->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"S_slow");
 	const Number steplength = computeRMultS(app)*computeSMultS(app);
+	printf("\n SLOOW steplength IS %f.",steplength);
 	// printf("\n");
 	// printf("\n");
 	if (steplength) {
 	  //	printf("\nLinearizeKKTWithMINRES::applyAlgorithmOnInterval(): MINRES-Step is %e.",steplength);
 	  z_postsplit_cond->Scal(steplength);
 	  //	  z_postsplit_cond->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"z_sc_slow");
-	  // z_postsplit = computeS(app);
-	  // z_postsplit->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"S_slow");
 	} else
 	  printf("\nLinearizeKKTWithMINRES::applyAlgorithmOnInterval(): ERROR: MINRES-Step is 0.");
 
@@ -2582,9 +2644,9 @@ SplitApproximation LinearizeKKTWithMINRES::applyAlgorithmOnInterval(SmartPtr<Ipo
   // calculate absolute sensitivity values
   sense->MultVector(1.0,*deltap,0.0,*res_sense);
 
-  printf("\n\n");
-  res_sense->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"result_s");
-  printf("\n\n");
+  // printf("\n\n");
+  // res_sense->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"result_s");
+  // printf("\n\n");
   std::vector<Index> x_intervalIDs = (dynamic_cast<const DenseVectorSpace*>(GetRawPtr(x_->OwnerSpace())))->GetIntegerMetaData("intervalID");
   printf("\n");
 
@@ -3127,206 +3189,10 @@ SmartPtr<const DenseVector> LinKKTFaster::shrinkVector(SmartPtr<Vector> original
   return shrinkVector(c_original,indices);
 }
 
-Number LinKKTFaster::computeRMultS(SmartPtr<IpoptApplication> app,const VectorSet& target) const
-{
-  Number retval =0;
-  printf("\nLinKKTFaster::compR(SmartPtr<IpoptApplication> app,const VectorSet& target) const");
-  VectorSet S = computeS(app,target);
-  retval+= target.top->Dot(*S.top)+target.x->Dot(*S.x)+target.y_c->Dot(*S.y_c)+target.y_d->Dot(*S.y_d);
-  return retval;
-}
-
-Number LinKKTFaster::computeSMultS(SmartPtr<IpoptApplication> app,const VectorSet& target) const
-{
-  Number retval =0;
-  printf("\nLinKKTFaster::compss(SmartPtr<IpoptApplication> app,const VectorSet& target) const");
-  VectorSet S = computeS(app,target);
-  retval+= S.top->Dot(*S.top)+S.x->Dot(*S.x)+S.y_c->Dot(*S.y_c)+S.y_d->Dot(*S.y_d);
-
-  return retval;
-}
-
 /* SmartPtr<const DenseVector> LinKKTFaster::computeR() const
 {
 // not needed for x_0 = 0 and 0 steps.
 } */
-
-VectorSet LinKKTFaster::computeS(SmartPtr<IpoptApplication> app,const VectorSet& target) const
-{
-  // init retval parts
-  SmartPtr<DenseVector> retval_u = u_i_->MakeNewDenseVector();
-  SmartPtr<DenseVector> retval_x = x_i_->MakeNewDenseVector();
-  SmartPtr<DenseVector> retval_y_c = y_c_i_->MakeNewDenseVector();
-  SmartPtr<DenseVector> retval_y_d = y_d_i_->MakeNewDenseVector();
-
-  // get (W_i,shift times rhs_i) with i= (shift_h, u)
-  SmartPtr<DenseVector> tmp_rhs = expand(target.x,shift_x_indices_,lhs_h_->NCols());
-  SmartPtr<DenseVector> extractor = tmp_rhs->MakeNewDenseVector();
-  lhs_h_->MultVector(1.0,*tmp_rhs,0.0,*extractor);
-  // map results back to get u and shift part seperately for the appropriate parts of S
-  SmartPtr<DenseVector> extr_u_part = shrink(extractor,u_indices_);
-  retval_u->AddOneVector(1.0,*extr_u_part,0.0);
-  SmartPtr<DenseVector> extr_shift_part = shrink(extractor,shift_x_indices_);
-  retval_x->AddOneVector(1.0,*extr_shift_part,0.0);
-
-  //get (A_shift^T times rhs_i) parts with i= (u, shift_c)
-  tmp_rhs = expand(target.y_c,shift_c_indices_,lhs_c_->NRows());
-  SmartPtr<DenseVectorSpace> extractor_space = new DenseVectorSpace(lhs_c_->NCols());
-  extractor = extractor_space->MakeNewDenseVector();
-  lhs_c_->TransMultVector(1.0,*tmp_rhs,0.0,*extractor);
-  //map results back to get u and shift part seperately for the appropriate parts of S
-  extr_u_part = shrink(extractor,u_indices_);
-  retval_u->AddOneVector(1.0,*extr_u_part,1.0);
-  extr_shift_part = shrink(extractor,shift_x_indices_);
-  retval_x->AddOneVector(1.0,*extr_shift_part,1.0);
-
-  //get (B_shift^T times rhs_i) parts with i= (u, shift_d)
-  tmp_rhs = expand(target.y_d,shift_d_indices_,lhs_d_->NRows());
-  extractor_space = new DenseVectorSpace(lhs_d_->NCols());
-  extractor = extractor_space->MakeNewDenseVector();
-  lhs_d_->TransMultVector(1.0,*tmp_rhs,0.0,*extractor);
-  //map result back to get u and shift part seperately for the appropriate parts of S
-  extr_u_part = shrink(extractor,u_indices_);
-  retval_u->AddOneVector(1.0,*extr_u_part,1.0);
-  extr_shift_part = shrink(extractor,shift_x_indices_);
-  retval_x->AddOneVector(1.0,*extr_shift_part,1.0);
-
-  //get (A_shift times rhs_shift_c) part
-  tmp_rhs = expand(target.x,shift_x_indices_,lhs_c_->NCols());
-  extractor = tmp_rhs->MakeNewDenseVector();
-  lhs_c_->MultVector(1.0,*tmp_rhs,0.0,*extractor);
-  //map result back to the appropriate parts of S
-  retval_y_c = shrink(extractor,shift_c_indices_);
-
-  //get (B_shift times rhs_shift_d) part
-  tmp_rhs = expand(target.x,shift_x_indices_,lhs_d_->NCols());
-  extractor = tmp_rhs->MakeNewDenseVector();
-  lhs_d_->MultVector(1.0,*tmp_rhs,0.0,*extractor);
-  //map result back to the appropriate parts of S
-  retval_y_d = shrink(extractor,shift_d_indices_);
-
-  // copy top values over from target, at the same time add D-multiplication to shifted part
-  VectorSet retval = computeDMultYrhs(app,target);
-  printf("\ncomputeS() just called computeDMultYrhs()!");
-
-  // map and insert u part back into top part
-  SmartPtr<DenseVector> top_x = dynamic_cast<DenseVector*>(target.top->x()->MakeNewCopy());
-  SmartPtr<const DenseVector> top_u = expandVector(retval_u,u_indices_,top_x->Dim());
-  top_x->AddOneVector(1.0,*top_u,1.0);
-  SmartPtr<IteratesVector> retval_top = target.top->MakeNewIteratesVector();
-  retval_top->Set(0.0);
-  retval_top->Set_x_NonConst(*top_x);
-  retval_top->Set_y_c(*target.top->y_c());
-  retval_top->Set_y_d(*target.top->y_d());
-
-  // insert calculated parts into retval
-  retval.top = retval_top;
-  retval.x->AddOneVector(1.0,*retval_x,1.0);
-  retval.y_c->AddOneVector(1.0,*retval_y_c,1.0);
-  retval.y_d->AddOneVector(1.0,*retval_y_d,1.0);
-
-  return retval;
-}
-
-  SmartPtr<DenseVector> LinKKTFaster::resetValuesAt(SmartPtr<DenseVector> target, std::vector<Index>indices) const
-{
-  assert(indices.size()<=target->Dim());
-  const Index dim = target->Dim();
-  const Number* values = target->Values();
-  Number* new_vals = new Number[dim];
-  std::copy(values,values+dim,new_vals);
-
-  for (int i=0;i<indices.size();i++) {
-    assert(indices[i]<target->Dim());
-    new_vals[u_indices_[i]] = 0.0;
-  }
-  SmartPtr<DenseVector> retval = target->MakeNewDenseVector();
-  retval->SetValues(new_vals);
-
-  return retval;
-}
-
-VectorSet LinKKTFaster::computeDMultYrhs(SmartPtr<IpoptApplication> app,const VectorSet& target) const
-{
-  // get KKT matrix
-  SmartPtr<IpoptAlgorithm> alg = app->AlgorithmObject();
-  SmartPtr<PDSearchDirCalculator> pd_search;
-  pd_search = dynamic_cast<PDSearchDirCalculator*>(GetRawPtr(alg->SearchDirCalc()));
-  SmartPtr<PDSystemSolver> pd_solver = pd_search->PDSolver();
-
-  // do actual backsolve
-  SmartPtr<IteratesVector> preretval = target.top->MakeNewIteratesVector();
-  pd_solver->Solve(1.0, 0.0, *target.top, *preretval);
-
-  // get (K^-1 times rhs) u part and eliminate non-u part elements
-  SmartPtr<DenseVector> retval_x = dynamic_cast<DenseVector*>(preretval->x()->MakeNewCopy());
-  retval_x = shrink(retval_x,u_indices_);
-  retval_x = expand(retval_x,u_indices_,lhs_h_->NCols());
-  SmartPtr<DenseVector> retval_c;  // = preretval->y_c();
-  SmartPtr<DenseVector> retval_d;  // = preretval->y_d();
-
-  // multiply with appropriate lhs parts
-  SmartPtr<DenseVectorSpace> retval_nc_space = new DenseVectorSpace(lhs_h_->NRows());
-  SmartPtr<DenseVector> retval_x_nonconst = retval_nc_space->MakeNewDenseVector();
-  lhs_h_->MultVector(1.0,*retval_x,0.0,*retval_x_nonconst);
-  retval_nc_space = new DenseVectorSpace(lhs_c_->NRows());
-  SmartPtr<DenseVector> retval_c_nonconst = retval_nc_space->MakeNewDenseVector();
-  lhs_c_->MultVector(1.0,*retval_x,0.0,*retval_c_nonconst);
-  retval_nc_space = new DenseVectorSpace(lhs_d_->NRows());
-  SmartPtr<DenseVector> retval_d_nonconst = retval_nc_space->MakeNewDenseVector();
-  lhs_d_->MultVector(1.0,*retval_x,0.0,*retval_d_nonconst);
-
-  // reduce to the desired quantities
-  retval_x = shrink(retval_x_nonconst,shift_x_indices_);
-  retval_c = shrink(retval_c_nonconst,shift_c_indices_);
-  retval_d = shrink(retval_d_nonconst,shift_d_indices_);
-
-  //setup return value
-  VectorSet retval;
-  retval.top = target.top->MakeNewIteratesVectorCopy();
-  retval.x = retval_x;
-  retval.y_c = retval_c;
-  retval.y_d = retval_d;
-
-  SmartPtr<DenseVector> z_postsplit = transformVectorSet(retval);
-  z_postsplit->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"DMult_fast");
-
-
-  return retval;
-}
-
-VectorSet LinKKTFaster::undoConditionning(SmartPtr<IpoptApplication> app, const VectorSet& target) const
-{
-  SmartPtr<DenseVectorSpace> retval_space = new DenseVectorSpace(target.top->Dim()+target.x->Dim()+target.y_c->Dim()+target.y_d->Dim());
-
-  VectorSet retval;
-  retval.top = target.top->MakeNewIteratesVectorCopy();
-  retval.x = dynamic_cast<DenseVector*>(target.x->MakeNewCopy());
-  retval.y_c = dynamic_cast<DenseVector*>(target.y_c->MakeNewCopy());
-  retval.y_d = dynamic_cast<DenseVector*>(target.y_d->MakeNewCopy());
-
-  SmartPtr<IteratesVector> retval_top = retval.top->MakeNewIteratesVectorCopy();
-
-  // get KKT matrix
-  SmartPtr<IpoptAlgorithm> alg = app->AlgorithmObject();
-  SmartPtr<PDSearchDirCalculator> pd_search;
-  pd_search = dynamic_cast<PDSearchDirCalculator*>(GetRawPtr(alg->SearchDirCalc()));
-  SmartPtr<PDSystemSolver> pd_solver = pd_search->PDSolver();
-
-  // do actual backsolve
-  pd_solver->Solve(1.0, 0.0, *target.top, *retval_top);
-
-  SmartPtr<const Vector> retval_x = retval_top->x();
-  SmartPtr<const Vector> retval_c = retval_top->y_c();
-  SmartPtr<const Vector> retval_d = retval_top->y_d();
-
-  retval.top->Set(0.0);
-  retval.top->Set_x(*retval_x);
-  retval.top->Set_y_c(*retval_c);
-  retval.top->Set_y_d(*retval_d);
-
- return retval;
-}
 
 SmartPtr<const DenseVector> LinKKTFaster::computeDeltaP(const IntervalInfoSet& intervals,const Index& interval) const
 {
@@ -3377,76 +3243,47 @@ SplitApproximation LinKKTFaster::applyAlgorithmOnInterval(SmartPtr<IpoptApplicat
   SmartPtr<MultiVectorMatrix> sense = sense_space->MakeNewMultiVectorMatrix();
   SmartPtr<DenseVectorSpace> res_space = new DenseVectorSpace(sense->NRows());
   SmartPtr<DenseVector> res_sense = res_space->MakeNewDenseVector();
-  VectorSet rhs;
-  VectorSet rhs_scaled;
-  VectorSet lhs;
+  SmartPtr<ShiftVector> rhs, rhs_scaled, lhs;
 
   // start algorithm on each existing intervalID
   Index s_count = 0;
   for (Index j=0;j<intervalIDs.size();j++) {
     if (intervalIDs[j]==interval) {
       printf("\napplySplitAlgorithmintervalIDs matching at index %d and value %d",j,interval);
-  // assign private attributes depending on chosen interval
-      if (assignIntAndParaDepAttr(interval,j)) {
-	// create VectorSet for computation calls
 
+      // assign private attributes depending on chosen interval
+      if (assignIntAndParaDepAttr(interval,j)) {
+
+	// create ShiftVector for computation calls
 	SmartPtr<IteratesVector> rhs_top = app->IpoptDataObject()->curr()->MakeNewIteratesVector();
+	SmartPtr<DenseVector> rhs_x,rhs_y_c,rhs_y_d;
 	rhs_top->Set(0.0);
 	rhs_top->Set_x_NonConst(*x_i_);
 	rhs_top->Set_y_c_NonConst(*y_c_i_);
 	rhs_top->Set_y_d_NonConst(*y_d_i_);
-	rhs.top = rhs_top;
-	rhs.x = shrink(x_i_,shift_x_indices_);
-	rhs.y_c = shrink(y_c_i_,shift_c_indices_);
-	rhs.y_d = shrink(y_d_i_,shift_d_indices_);
-	// printVectorSet(app,rhs,"rhs");
-	z_postsplit = transformVectorSet(rhs);
-	z_postsplit->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"z_fast");
-	// compute solution of the GMRES-Step
-	const Number steplength = computeRMultS(app,rhs)*computeSMultS(app,rhs);
-	/*      printf("\n\n");
-		char buffer[16];
-		sprintf(buffer,"rhs_i_[%d]",j);
-		rhs_i_->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, buffer);
-	*/
+	rhs_x = shrink(x_i_,shift_x_indices_);
+	rhs_y_c = shrink(y_c_i_,shift_c_indices_);
+	rhs_y_d = shrink(y_d_i_,shift_d_indices_);
+	rhs = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
+	//	rhs->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"z_SV");
 
-	//  printf("\n n_u_= %d, n_x_ = %d, n_c_ = %d, n_d_ = %d", n_u_, n_x_, n_c_, n_d_);
-	//	printVectorSet(app,rhs,"rhs");
+	// compute solution of the GMRES-Step
+	//	lhs = computeS(app,rhs);
+	//	lhs->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"S_SV");
+	const Number steplength = computeRMultS(app,rhs)*computeSMultS(app,rhs);
+	printf("\n FAAST steplength IS %f.",steplength);
 	if (steplength) {
-	  //	printf("\nLinKKTFaster::applyAlgorithmOnInterval(): MINRES-Step is %e.",steplength);
-	  rhs_scaled = scaleVectorSet(rhs,steplength);
-	  // z_postsplit = transformVectorSet(rhs_scaled);
-	  // z_postsplit->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"z_sc_fast");
-	  // z_postsplit = transformVectorSet(computeS(app,rhs));
-	  // z_postsplit->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"S_fast");
-	//printVectorSet(app,rhs,"rhs");
-//	printVectorSet(app,rhs_scaled,"rhs_scaled");
+	  rhs_scaled = rhs;
+	  rhs_scaled->Scal(steplength);
+	  //	  rhs_scaled->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"z_sc_SV");
+	  rhs = computeS(app,rhs_scaled);
+	  //	  rhs->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"S_SV");
 	} else
-	  printf("\nLinKKTFaster::applyAlgorithmOnInterval(): ERROR: MINRES-Step is 0.");
+	  printf("\nLinKKTFaster::applyAlgorithmOnInterval(): ERROR: Step-length is 0.");
 
 	// undo conditionning step to get the approximation of the postsplit sensitivity column
 	lhs = undoConditionning(app,rhs_scaled);
-//	printVectorSet(app,rhs_scaled,"rhs_scaled");
-//	printVectorSet(app,lhs,"lhs");
-	// compare sense vectors for test purposes
-	//      SmartPtr<Vector> compy = z_postsplit->MakeNew();
-	/*      printf("\n");
-		for (int i=0;i<n_x_+n_c_+n_d_+n_u_;i++)
-		printf("\n different");
-		//      compy->AddTwoVectors(1.0,*z_copy,-1.0,*z_postsplit_cond,0.0);
-		printf("\n\n");
-		z_postsplit->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"z_post");
-		//      compy->AddTwoVectors(1.0,*z_copy,-1.0,*z_postsplit,0.0);
-		printf("\n\n");
-		//      compy->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"compycomp");
-
-		*/
-
-	// transform the VectorSet into a DenseVector
-//	printVectorSet(app,lhs,"lhs");
-	z_postsplit = transformVectorSet(lhs);
-//	printVectorSet(app,lhs,"lhs");
-//	z_postsplit->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"z_post_f");
+	z_postsplit = lhs->getDVector();
 
 	// add the resulting sense vector to matrix ....
 	sense->SetVector(s_count,*z_postsplit);
@@ -3458,119 +3295,15 @@ SplitApproximation LinKKTFaster::applyAlgorithmOnInterval(SmartPtr<IpoptApplicat
   }
   // get the parameter perturbation for this split
   deltap = computeDeltaP(intervals_,interval);
-  deltap->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"deltap_f");
+
   // calculate absolute sensitivity values
   sense->MultVector(1.0,*deltap,0.0,*res_sense);
 
-  printf("\n\n");
-  res_sense->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"result_f");
-  printf("\n\n");
-  //  std::vector<Index> x_intervalIDs = (dynamic_cast<const DenseVectorSpace*>(GetRawPtr(x_->OwnerSpace())))->GetIntegerMetaData("intervalID");
-  //  printf("\n");
-  // for (int i=0;i<x_intervalIDs.size();i++)
-  //   printf("\n interval---%d----",x_intervalIDs[i]);
-
-
-  /* // Mapping test by checking for 0s in the right spots
-  SmartPtr<DenseVector> retval_lsh_h = dynamic_cast<DenseVector*>(rhs_shift_h_->MakeNew());
-
-    retval_lsh_h->Set(1.0);
-  SmartPtr<const DenseVector> test_vec = expandVector(dynamic_cast<const DenseVector*>(GetRawPtr(retval_lsh_h)),static_x_indices_,lhs_h_->NCols());
-  SmartPtr<DenseVector> res_vec = dynamic_cast<DenseVector*>(test_vec->MakeNew());
-  printf("\n\n");
-  lhs_h_->MultVector(1.0,*test_vec,0.0,*res_vec);
-  test_vec = shrinkVector(dynamic_cast<const DenseVector*>(GetRawPtr(res_vec)),shift_x_indices_);
-  test_vec->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"first 0s??");
-
-  printf("\n\n");
-  test_vec = expandVector(dynamic_cast<const DenseVector*>(GetRawPtr(retval_lsh_h)),shift_x_indices_,lhs_h_->NCols());
-  lhs_h_->MultVector(1.0,*test_vec,0.0,*res_vec);
-  test_vec = shrinkVector(dynamic_cast<const DenseVector*>(GetRawPtr(res_vec)),static_x_indices_);
-  test_vec->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"second 0s??");
-
-
-  retval_lsh_h = dynamic_cast<DenseVector*>(rhs_shift_c_->MakeNew());
-  retval_lsh_h->Set(1.0);
-
-  printf("\n\n");
-  test_vec = expandVector(dynamic_cast<const DenseVector*>(GetRawPtr(retval_lsh_h)),shift_x_indices_,lhs_c_->NCols());
-  lhs_c_->MultVector(1.0,*test_vec,0.0,*res_vec);
-  test_vec = shrinkVector(dynamic_cast<const DenseVector*>(GetRawPtr(res_vec)),static_c_indices_);
-  test_vec->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"third 0s??");
-
-  printf("\n\n");
-  test_vec = expandVector(dynamic_cast<const DenseVector*>(GetRawPtr(retval_lsh_h)),static_x_indices_,lhs_c_->NCols());
-  lhs_c_->MultVector(1.0,*test_vec,0.0,*res_vec);
-  test_vec = shrinkVector(dynamic_cast<const DenseVector*>(GetRawPtr(res_vec)),shift_c_indices_);
-  test_vec->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"fourth 0s??");
-*/
-    //  lhs_h_->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "hhhhhhhhh");
+  // printf("\n\n");
+  // res_sense->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"result_f");
+  // printf("\n\n");
 
   SplitApproximation retval;
-
-  return retval;
-}
-
-void LinKKTFaster::printVectorSet(SmartPtr<IpoptApplication>app,const VectorSet& target, const std::string& label) const
-{
-  char buffer[63];
-  sprintf(buffer,"%s.top.x",label.c_str());
-  printf("\n");
-  target.top->x()->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, buffer);
-  printf("\n");
-  sprintf(buffer,"%s.top.y_c",label.c_str());
-  target.top->y_c()->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, buffer);
-  printf("\n");
-  sprintf(buffer,"%s.top.y_d",label.c_str());
-  target.top->y_d()->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, buffer);
-  printf("\n");
-  sprintf(buffer,"%s.x",label.c_str());
-  target.x->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, buffer);
-  sprintf(buffer,"%s.y_c",label.c_str());
-  target.y_c->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, buffer);
-  sprintf(buffer,"%s.y_d",label.c_str());
-  target.y_d->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, buffer);
-}
-
-VectorSet LinKKTFaster::scaleVectorSet(const VectorSet& target,const Number& factor) const
-{
-  VectorSet retval;
-  retval.top = target.top->MakeNewIteratesVectorCopy();
-  retval.x = dynamic_cast<DenseVector*>(target.x->MakeNewCopy());
-  retval.y_c = dynamic_cast<DenseVector*>(target.y_c->MakeNewCopy());
-  retval.y_d = dynamic_cast<DenseVector*>(target.y_d->MakeNewCopy());
-
-  retval.top->Scal(factor);
-  retval.x->Scal(factor);
-  retval.y_c->Scal(factor);
-  retval.y_d->Scal(factor);
-
-  return retval;
-}
-
-SmartPtr<DenseVector> LinKKTFaster::transformVectorSet(const VectorSet& target) const
-{
-  // initialize
-  SmartPtr<DenseVectorSpace> retval_space = new DenseVectorSpace(rhs_dim_);
-  SmartPtr<DenseVector> retval = retval_space->MakeNewDenseVector();
-  Index abs_pos = 0;
-  SmartPtr<DenseVector> top_part = retval->MakeNewDenseVector();
-  SmartPtr<DenseVector> x_part = retval->MakeNewDenseVector();
-  SmartPtr<DenseVector> y_c_part = retval->MakeNewDenseVector();
-  SmartPtr<DenseVector> y_d_part = retval->MakeNewDenseVector();
-
-  // expand parts
-  top_part = expand(target.top,retval_space->Dim(),abs_pos);
-  abs_pos+= n_x_+n_c_+n_u_+n_d_;
-  x_part = expand(target.x,retval->Dim(),abs_pos);
-  abs_pos+= target.x->Dim();
-  y_c_part = expand(target.y_c,retval->Dim(),abs_pos);
-  abs_pos+= target.y_c->Dim();
-  y_d_part = expand(target.y_d,retval->Dim(),abs_pos);
-
-  // sum parts
-  retval->AddTwoVectors(1.0,*top_part,1.0,*x_part,0.0);
-  retval->AddTwoVectors(1.0,*y_d_part,1.0,*y_c_part,1.0);
 
   return retval;
 }
@@ -3822,4 +3555,174 @@ Number Abs(Number value) // use fabs(double)
     retval = value;
   return retval;
 }
+
+Number LinKKTFaster::computeRMultS(SmartPtr<IpoptApplication> app,SmartPtr<ShiftVector> target) const
+{
+  Number retval =0;
+  SmartPtr<ShiftVector> S = computeS(app,target);
+  retval+= target->Dot(*S);
+  printf("\ncomputeRMultS: retval is %e", retval);
+  return retval;
+}
+
+Number LinKKTFaster::computeSMultS(SmartPtr<IpoptApplication> app,SmartPtr<ShiftVector> target) const
+{
+  Number retval =0;
+
+  SmartPtr<ShiftVector> S = computeS(app,target);
+  retval+= S->Dot(*S);
+  printf("\ncomputeSMultS: retval is %e", retval);
+  return retval;
+}
+
+/* SmartPtr<const DenseVector> LinKKTFaster::computeR() const
+{
+// not needed for x_0 = 0 and 0 steps.
+} */
+
+SmartPtr<ShiftVector> LinKKTFaster::computeS(SmartPtr<IpoptApplication> app,SmartPtr<ShiftVector> target) const
+{
+  // init retval parts
+  SmartPtr<DenseVector> retval_x = target->x()->MakeNewDenseVector();
+  SmartPtr<DenseVector> retval_u = shrink(dynamic_cast<DenseVector*>(target->top()->x()->MakeNewCopy()),u_indices_);
+  SmartPtr<DenseVector> retval_y_c = target->y_c()->MakeNewDenseVector();
+  SmartPtr<DenseVector> retval_y_d = target->y_d()->MakeNewDenseVector();
+
+  // get (W_i,shift times rhs_i) with i= (shift_h, u)
+  SmartPtr<DenseVector> tmp_rhs = expand(target->x(),shift_x_indices_,lhs_h_->NCols());
+  SmartPtr<DenseVector> extractor = tmp_rhs->MakeNewDenseVector();
+  lhs_h_->MultVector(1.0,*tmp_rhs,0.0,*extractor);
+  // map results back to get u and shift part seperately for the appropriate parts of S
+  SmartPtr<DenseVector> extr_u_part = shrink(extractor,u_indices_);
+  retval_u->AddOneVector(1.0,*extr_u_part,0.0);
+  SmartPtr<DenseVector> extr_shift_part = shrink(extractor,shift_x_indices_);
+  retval_x->AddOneVector(1.0,*extr_shift_part,0.0);
+
+  //get (A_shift^T times rhs_i) parts with i= (u, shift_c)
+  tmp_rhs = expand(target->y_c(),shift_c_indices_,lhs_c_->NRows());
+  SmartPtr<DenseVectorSpace> extractor_space = new DenseVectorSpace(lhs_c_->NCols());
+  extractor = extractor_space->MakeNewDenseVector();
+  lhs_c_->TransMultVector(1.0,*tmp_rhs,0.0,*extractor);
+  //map results back to get u and shift part seperately for the appropriate parts of S
+  extr_u_part = shrink(extractor,u_indices_);
+  retval_u->AddOneVector(1.0,*extr_u_part,1.0);
+  extr_shift_part = shrink(extractor,shift_x_indices_);
+  retval_x->AddOneVector(1.0,*extr_shift_part,1.0);
+
+  //get (B_shift^T times rhs_i) parts with i= (u, shift_d)
+  tmp_rhs = expand(target->y_d(),shift_d_indices_,lhs_d_->NRows());
+  extractor_space = new DenseVectorSpace(lhs_d_->NCols());
+  extractor = extractor_space->MakeNewDenseVector();
+  lhs_d_->TransMultVector(1.0,*tmp_rhs,0.0,*extractor);
+  //map result back to get u and shift part seperately for the appropriate parts of S
+  extr_u_part = shrink(extractor,u_indices_);
+  retval_u->AddOneVector(1.0,*extr_u_part,1.0);
+  extr_shift_part = shrink(extractor,shift_x_indices_);
+  retval_x->AddOneVector(1.0,*extr_shift_part,1.0);
+
+  //get (A_shift times rhs_shift_c) part
+  tmp_rhs = expand(target->x(),shift_x_indices_,lhs_c_->NCols());
+  extractor = tmp_rhs->MakeNewDenseVector();
+  lhs_c_->MultVector(1.0,*tmp_rhs,0.0,*extractor);
+  //map result back to the appropriate parts of S
+  retval_y_c = shrink(extractor,shift_c_indices_);
+
+  //get (B_shift times rhs_shift_d) part
+  tmp_rhs = expand(target->x(),shift_x_indices_,lhs_d_->NCols());
+  extractor = tmp_rhs->MakeNewDenseVector();
+  lhs_d_->MultVector(1.0,*tmp_rhs,0.0,*extractor);
+  //map result back to the appropriate parts of S
+  retval_y_d = shrink(extractor,shift_d_indices_);
+
+  // copy top values over from target, at the same time add D-multiplication to shifted part
+  SmartPtr<ShiftVector> retval = computeDMultYrhs(app,target);
+  //  printf("\ncomputeS() just called computeDMultYrhs()!");
+
+  // map and insert u part back into top part
+  SmartPtr<DenseVector> top_x = dynamic_cast<DenseVector*>(target->top()->x()->MakeNewCopy());
+  SmartPtr<const DenseVector> top_u = expandVector(retval_u,u_indices_,top_x->Dim());
+  top_x->AddOneVector(1.0,*top_u,1.0);
+  SmartPtr<IteratesVector> retval_top = target->top()->MakeNewIteratesVector();
+  retval_top->Set(0.0);
+  retval_top->Set_x_NonConst(*top_x);
+  retval_top->Set_y_c(*target->top()->y_c());
+  retval_top->Set_y_d(*target->top()->y_d());
+
+  // insert calculated parts into retval
+  SmartPtr<ShiftVector> retpart = new ShiftVector(retval_top,retval_x,retval_y_c,retval_y_d);
+  retval->AddOneVector(1.0,*retpart,1.0);
+
+  return retval;
+}
+
+SmartPtr<ShiftVector> LinKKTFaster::computeDMultYrhs(SmartPtr<IpoptApplication> app,SmartPtr<ShiftVector> target) const
+{
+  // get KKT matrix
+  SmartPtr<IpoptAlgorithm> alg = app->AlgorithmObject();
+  SmartPtr<PDSearchDirCalculator> pd_search;
+  pd_search = dynamic_cast<PDSearchDirCalculator*>(GetRawPtr(alg->SearchDirCalc()));
+  SmartPtr<PDSystemSolver> pd_solver = pd_search->PDSolver();
+
+  // do actual backsolve
+  SmartPtr<IteratesVector> preretval = target->top()->MakeNewIteratesVector();
+  pd_solver->Solve(1.0, 0.0, *target->top(), *preretval);
+
+  // get (K^-1 times rhs) u part and eliminate non-u part elements
+  SmartPtr<DenseVector> retval_x = dynamic_cast<DenseVector*>(preretval->x()->MakeNewCopy());
+  retval_x = shrink(retval_x,u_indices_);
+  retval_x = expand(retval_x,u_indices_,lhs_h_->NCols());
+  SmartPtr<DenseVector> retval_c;  // = preretval->y_c();
+  SmartPtr<DenseVector> retval_d;  // = preretval->y_d();
+
+  // multiply with appropriate lhs parts
+  SmartPtr<DenseVectorSpace> retval_nc_space = new DenseVectorSpace(lhs_h_->NRows());
+  SmartPtr<DenseVector> retval_x_nonconst = retval_nc_space->MakeNewDenseVector();
+  lhs_h_->MultVector(1.0,*retval_x,0.0,*retval_x_nonconst);
+  retval_nc_space = new DenseVectorSpace(lhs_c_->NRows());
+  SmartPtr<DenseVector> retval_c_nonconst = retval_nc_space->MakeNewDenseVector();
+  lhs_c_->MultVector(1.0,*retval_x,0.0,*retval_c_nonconst);
+  retval_nc_space = new DenseVectorSpace(lhs_d_->NRows());
+  SmartPtr<DenseVector> retval_d_nonconst = retval_nc_space->MakeNewDenseVector();
+  lhs_d_->MultVector(1.0,*retval_x,0.0,*retval_d_nonconst);
+
+  // reduce to the desired quantities
+  retval_x = shrink(retval_x_nonconst,shift_x_indices_);
+  retval_c = shrink(retval_c_nonconst,shift_c_indices_);
+  retval_d = shrink(retval_d_nonconst,shift_d_indices_);
+
+  //setup return value
+  SmartPtr<ShiftVector> retval = new ShiftVector(target->top()->MakeNewIteratesVectorCopy(),retval_x,retval_c,retval_d);
+
+  return retval;
+}
+
+SmartPtr<ShiftVector> LinKKTFaster::undoConditionning(SmartPtr<IpoptApplication> app, SmartPtr<ShiftVector> target) const
+{
+  SmartPtr<IteratesVector> retval_top = target->top()->MakeNewIteratesVectorCopy();
+
+
+  // get KKT matrix
+  SmartPtr<IpoptAlgorithm> alg = app->AlgorithmObject();
+  SmartPtr<PDSearchDirCalculator> pd_search;
+  pd_search = dynamic_cast<PDSearchDirCalculator*>(GetRawPtr(alg->SearchDirCalc()));
+  SmartPtr<PDSystemSolver> pd_solver = pd_search->PDSolver();
+
+  // do actual backsolve
+  pd_solver->Solve(1.0, 0.0, *target->top(), *retval_top);
+  SmartPtr<const Vector> retval_x = retval_top->x()->MakeNewCopy();
+  SmartPtr<const Vector> retval_c = retval_top->y_c()->MakeNewCopy();
+  SmartPtr<const Vector> retval_d = retval_top->y_d()->MakeNewCopy();
+
+  retval_top->Set(0.0);
+  retval_top->Set_x(*retval_x);
+  retval_top->Set_y_c(*retval_c);
+  retval_top->Set_y_d(*retval_d);
+
+  // set up retval
+  SmartPtr<ShiftVector> retval = new ShiftVector(retval_top,target->x(),target->y_c(),target->y_d());
+
+
+  return retval;
+}
+
 
