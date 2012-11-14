@@ -616,14 +616,13 @@ namespace Ipopt
       "The branch algorithm will calculate the kind of value "
       "determined here to check the branching criterion "
       "specified in option \"branchmode\". ");
-    roptions->AddStringOption3(
+    roptions->AddStringOption2(
       "sensemode",
       "Determine which sensitivity to consider for split decisions.",
-      "MINRES",
-      "MINRES", "shift using MINRES, split using linearized KKT",
+      "GMRES",
       "GMRES", "shift using GMRES, split using linearized KKT",
       "control", "determine splits with largest effect on a control value",
-      "\"MINRES\" will approximate the results of the split by a linearization of the KKT "
+      "\"GMRES\" will approximate the results of the split by a linearization of the KKT "
       "conditions combined with a preconditionning step. \"control\" will calculate the "
       "split with largest effect on the control specified in option \"ctrl_name\" or "
       "\"ctrl_index\". ");

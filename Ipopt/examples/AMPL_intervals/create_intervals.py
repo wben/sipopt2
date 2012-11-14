@@ -132,10 +132,9 @@ class AmplSet:
             branchvalue = 'branchvalue product\n'
         if alg == 'control':
             algorithm = 'sensemode control\n'
-        elif alg == 'GMRES':
-            algorithm = 'sensemode GMRES\n'
         else:
-            algorithm = 'sensemode MINRES\n'
+            algorithm = 'sensemode GMRES\n'
+
         control = ctrl +' '
         ctype = str(ctrlt) +'\n'
         retval = branchmode+scaling+branchvalue
