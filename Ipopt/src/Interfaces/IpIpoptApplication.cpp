@@ -642,6 +642,29 @@ namespace Ipopt
       "controlwise branching, the index of the control, i.e. number of first occurance in the model "
       "can also be used for specification, starting at 0.\n"
       "NOTE: This can only be used, when the option \"sensemode\" is set to \"control\".");
+    roptions->AddNumberOption(
+      "gmr_tol",
+      "tolerance towards which GMRES algorithm will be solving.",
+      1.0e-5,
+      "This is one of two options with which the user can specify the amount of outer GMRES "
+      "iterations. The algorithm will either aim to achieve a solution with an error below "
+      "option value \"gmr_tol\" or just return the least inexact solution available after a "
+      "number of iterations as specfied in the option \"gmr_n_max\". If set to 0, the "
+      "algorithm will aim for most accurate solution possible in \"gmr_n_max\" iterations.");
+    roptions->AddIntegerOption(
+      "gmr_n_max",
+      "Maximum number of outer iterations in GMRES algorithm.",
+      20,
+      "This is one of two options with which the user can specify the amount of outer GMRES "
+      "iterations. The algorithm will either aim to achieve a solution with an error below "
+      "option value \"gmr_tol\" or just return the least inexact solution available after a "
+      "number of iterations as specfied in the option \"gmr_n_max\". if set to 0, the "
+      "algorithm will run until a solution of \"gmr_tol\" accuracy is available.");
+    roptions->AddIntegerOption(
+      "gmr_n_rst",
+      "Number of outer iterations in GMRES algorithm without reset of matrix A.",
+      0,
+      "Code won't read this argument as restart is not implemented yet. ");
 
 #if COIN_IPOPT_VERBOSITY > 0
 
