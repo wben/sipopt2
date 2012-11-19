@@ -276,6 +276,7 @@ public:
   /*algorithm specific components*/
   void assignGMRESOptions(SmartPtr<OptionsList> options,Number& tol, Index& n_max, Index& n_rest) const;
   SmartPtr<ShiftVector> computeGMRES(SmartPtr<ShiftVector>b,SmartPtr<ShiftVector>x0,const Number& tol =1.0e-6, const Index& n_max=5, const Index& n_rest=0);
+  SmartPtr<ShiftVector> computeGMRESatn(SmartPtr<ShiftVector>b,SmartPtr<ShiftVector>x0,const Number& tol =1.0e-6, const Index& n_max=5, const Index& n_rest=0);
   Number computeRMultS(SmartPtr<ShiftVector> target) const;
   Number computeSMultS(SmartPtr<ShiftVector> target) const;
   SmartPtr<ShiftVector> computeAMultVector(SmartPtr<ShiftVector> target) const;
@@ -307,6 +308,11 @@ private:
   Index n_u_;
   Index rhs_dim_;
   Index top_dim_;
+
+  // testwise
+std::vector<Index> _x_intervalIDs;
+  std::vector<Index> _c_intervalIDs;
+  std::vector<Index> _d_intervalIDs;
 
   // extracted data - interval specific
   SmartPtr<DenseVector> u_i_;
@@ -365,7 +371,7 @@ public:
   Number Dot(const Vector &x) const;
   Number Dot(const ShiftVector &x) const;
   Index Dim() const;
-  void Set(Number alpha);
+  void Set(const Number& alpha);
   Number Nrm2() const;
   void AddOneVector(const Number& a,const ShiftVector& v1,const Number& c);
   void AddTwoVectors(const Number& a,const ShiftVector& v1,const Number& b,const ShiftVector& v2,const Number& c);
@@ -382,8 +388,9 @@ private:
   void x(SmartPtr<DenseVector>x);  //remember to set privates
   void y_c(SmartPtr<DenseVector>y_c);  //remember to set privates
   void y_d(SmartPtr<DenseVector>y_d);  //remember to set privates
-  //  void ownerspace(SmartPtr<ShiftVectorSpace>ospace);  //remember to set privates
+  //void ownerspace(SmartPtr<ShiftVectorSpace>ospace);  //remember to set privates
   void exp(SmartPtr<DenseVector> exp);    //remember to set privates + space
+  void Dim(const Index& dim);
   SmartPtr<DenseVector> getDVector(SmartPtr<IteratesVector> top,
 	      SmartPtr<DenseVector> x,
 	      SmartPtr<DenseVector>y_c,
@@ -398,6 +405,9 @@ private:
   SmartPtr<DenseVectorSpace> t_y_d_space;
 
   SmartPtr<IteratesVector> top_;
+  SmartPtr<DenseVector> t_x_;
+  SmartPtr<DenseVector> t_y_c_;
+  SmartPtr<DenseVector> t_y_d_;
   SmartPtr<DenseVector> x_;
   SmartPtr<DenseVector> y_c_;
   SmartPtr<DenseVector> y_d_;
@@ -799,35 +809,96 @@ ShiftVector::ShiftVector(SmartPtr<IteratesVector> top, SmartPtr<DenseVector> x, 
 
   t_space = dynamic_cast<const IteratesVectorSpace*>(GetRawPtr(top->OwnerSpace()));
   top_ = t_space->MakeNewIteratesVector();
-  top_ = top->MakeNewIteratesVectorCopy();
+  top_->Set(0.0);
 
   t_x_space = new DenseVectorSpace(top->x()->Dim());
+  SmartPtr<DenseVector> t_x_ = t_x_space->MakeNewDenseVector();
+
+  if (dynamic_cast<const DenseVector*>(GetRawPtr(top->x()))->IsHomogeneous())
+    t_x_->Set(dynamic_cast<const DenseVector*>(GetRawPtr(top->x()))->Scalar());
+  else {
+    const Number* t_x_values = dynamic_cast<const DenseVector*>(GetRawPtr(top->x()))->Values();
+    if (!t_x_values)
+      printf("\nShiftVector::ShiftVector(): Error: t_x_values is NULL.");
+    else {
+      Number* t_x__values = new Number[t_x_->Dim()];
+      std::copy(t_x_values, t_x_values+t_x_->Dim(),t_x__values);
+      t_x_->SetValues(t_x__values);
+    }
+  }
   t_y_c_space = new DenseVectorSpace(top->y_c()->Dim());
+  SmartPtr<DenseVector> t_y_c_ = t_y_c_space->MakeNewDenseVector();
+
+  if (dynamic_cast<const DenseVector*>(GetRawPtr(top->y_c()))->IsHomogeneous())
+    t_y_c_->Set(dynamic_cast<const DenseVector*>(GetRawPtr(top->y_c()))->Scalar());
+  else {
+    const Number* t_y_c_values = dynamic_cast<const DenseVector*>(GetRawPtr(top->y_c()))->Values();
+    if (!t_y_c_values)
+      printf("\nShiftVector::ShiftVector(): Error: t_y_c_values is NULL.");
+    else {
+      Number* t_y_c__values = new Number[t_y_c_->Dim()];
+      std::copy(t_y_c_values, t_y_c_values+t_y_c_->Dim(),t_y_c__values);
+      t_y_c_->SetValues(t_y_c__values);
+    }
+  }
   t_y_d_space = new DenseVectorSpace(top->y_d()->Dim());
+  SmartPtr<DenseVector> t_y_d_ = t_y_d_space->MakeNewDenseVector();
+
+if (dynamic_cast<const DenseVector*>(GetRawPtr(top->y_d()))->IsHomogeneous())
+    t_y_d_->Set(dynamic_cast<const DenseVector*>(GetRawPtr(top->y_d()))->Scalar());
+  else {
+    const Number* t_y_d_values = dynamic_cast<const DenseVector*>(GetRawPtr(top->y_d()))->Values();
+    if (!t_y_d_values)
+      printf("\nShiftVector::ShiftVector(): Error: t_y_d_values is NULL.");
+    else {
+      Number* t_y_d__values = new Number[t_y_d_->Dim()];
+      std::copy(t_y_d_values, t_y_d_values+t_y_d_->Dim(),t_y_d__values);
+      t_y_d_->SetValues(t_y_d__values);
+    }
+  }
+    top_->Set_x_NonConst(*t_x_);
+    top_->Set_y_c_NonConst(*t_y_c_);
+    top_->Set_y_d_NonConst(*t_y_d_);
 
   x_space = new DenseVectorSpace(x->Dim());
   x_ = x_space->MakeNewDenseVector();
 
-  const Number* x_values = x->Values();
-  Number* x__values = new Number[x->Dim()];
-  std::copy(x_values, x_values+x->Dim(),x__values);
-  x_->SetValues(x__values);
-
+  if (x->IsHomogeneous())
+    x_->Set(x->Scalar());
+  else {
+    const Number* x_values = x->Values();
+    if (!x_values)
+      printf("\nShiftVector::ShiftVector(): Error: x_values is NULL.");
+    Number* x__values = new Number[x->Dim()];
+    std::copy(x_values, x_values+x->Dim(),x__values);
+    x_->SetValues(x__values);
+  }
   y_c_space = new DenseVectorSpace(y_c->Dim());
   y_c_ = y_c_space->MakeNewDenseVector();
 
-  const Number* y_c_values = y_c->Values();
-  Number* y_c__values = new Number[y_c->Dim()];
-  std::copy(y_c_values, y_c_values+y_c->Dim(),y_c__values);
-  y_c_->SetValues(y_c__values);
-
+  if (y_c->IsHomogeneous())
+    y_c_->Set(y_c->Scalar());
+  else {
+    const Number* y_c_values = y_c->Values();
+    if (!y_c_values)
+      printf("\nShiftVector::ShiftVector(): Error: y_c_values is NULL.");
+    Number* y_c__values = new Number[y_c->Dim()];
+    std::copy(y_c_values, y_c_values+y_c->Dim(),y_c__values);
+    y_c_->SetValues(y_c__values);
+  }
   y_d_space = new DenseVectorSpace(y_d->Dim());
   y_d_ = y_d_space->MakeNewDenseVector();
 
-  const Number* y_d_values = y_d->Values();
-  Number* y_d__values = new Number[y_d->Dim()];
-  std::copy(y_d_values, y_d_values+y_d->Dim(),y_d__values);
-  y_d_->SetValues(y_d__values);
+  if (y_d->IsHomogeneous())
+    y_d_->Set(y_d->Scalar());
+  else {
+    const Number* y_d_values = y_d->Values();
+    if (!y_d_values)
+      printf("\nShiftVector::ShiftVector(): Error: y_d_values is NULL.");
+    Number* y_d__values = new Number[y_d->Dim()];
+    std::copy(y_d_values, y_d_values+y_d->Dim(),y_d__values);
+    y_d_->SetValues(y_d__values);
+  }
 
   top_dim_ = top_->x()->Dim()+top_->y_c()->Dim()+top_->y_d()->Dim();
   x_dim_ = x_->Dim();
@@ -839,20 +910,17 @@ ShiftVector::ShiftVector(SmartPtr<IteratesVector> top, SmartPtr<DenseVector> x, 
 
   // construct DenseVector expansion of the stored values
   exp_space_ = new DenseVectorSpace(dim_);
-exp_ = getDVector(top,x,y_c,y_d);
+  exp_ = getDVector(top_,x_,y_c_,y_d_);
 }
 
 SmartPtr<DenseVector> ShiftVector::getDVector(SmartPtr<IteratesVector> top,SmartPtr<DenseVector> x, SmartPtr<DenseVector>y_c, SmartPtr<DenseVector> y_d)
 {
   Index top_dim = top->x()->Dim()+top->y_c()->Dim()+top->y_d()->Dim();
-  Index x_dim = x->Dim();
-  Index y_c_dim = y_c->Dim();
-  Index y_d_dim = y_d->Dim();
+  const  Index x_dim = x->Dim();
+  const  Index y_c_dim = y_c->Dim();
+  const  Index y_d_dim = y_d->Dim();
   Index dim = top_dim+x_dim+y_c_dim+y_d_dim;
-
-  const Number* x_values = x->Values();
-  const Number* y_c_values = y_c->Values();
-  const Number* y_d_values = y_d->Values();
+  Index hom_val = 0;
 
   SmartPtr<DenseVectorSpace> retval_space = new DenseVectorSpace(dim);
   SmartPtr<DenseVector> retval = retval_space->MakeNewDenseVector();
@@ -860,49 +928,111 @@ SmartPtr<DenseVector> ShiftVector::getDVector(SmartPtr<IteratesVector> top,Smart
   Number* exp_values = new Number[dim];
   Index abs_pos = 0;
 
-  const Number* top_x_val = dynamic_cast<const DenseVector*>(GetRawPtr(top->x()))->Values();
-  const Number* top_y_c_val = dynamic_cast<const DenseVector*>(GetRawPtr(top->y_c()))->Values();
-  const Number* top_y_d_val = dynamic_cast<const DenseVector*>(GetRawPtr(top->y_d()))->Values();
-
   const Index top_x_dim = top->x()->Dim();
   const Index top_y_c_dim = top->y_c()->Dim();
   const Index top_y_d_dim = top->y_d()->Dim();
 
-  for (int i=0;i<top_x_dim;i++){
-    exp_values[abs_pos] = 0;
-    if (top_x_val)
-      exp_values[abs_pos] = top_x_val[i];
-    abs_pos++;
+  if (dynamic_cast<const DenseVector*>(GetRawPtr(top->x()))->IsHomogeneous()) {
+    hom_val = dynamic_cast<const DenseVector*>(GetRawPtr(top->x()))->Scalar();
+    for (int i=0;i<top_x_dim;i++){
+      exp_values[abs_pos] = hom_val;
+      abs_pos++;
+    }
+  } else {
+    const Number* top_x_val = dynamic_cast<const DenseVector*>(GetRawPtr(top->x()))->Values();
+    if (!top_x_val)
+      printf("\nShiftVector::getDVector(): Error: top_x_val is NULL.");
+    for (int i=0;i<top_x_dim;i++){
+      exp_values[abs_pos] = 0;
+      if (top_x_val)
+	exp_values[abs_pos] = top_x_val[i];
+      abs_pos++;
+    }
   }
-  for (int i=0;i<top_y_c_dim;i++){
-    exp_values[abs_pos] = 0;
-    if (top_y_c_val)
-      exp_values[abs_pos] = top_y_c_val[i];
-    abs_pos++;
+  if (dynamic_cast<const DenseVector*>(GetRawPtr(top->y_c()))->IsHomogeneous()) {
+    hom_val = dynamic_cast<const DenseVector*>(GetRawPtr(top->y_c()))->Scalar();
+    for (int i=0;i<top_y_c_dim;i++){
+      exp_values[abs_pos] = hom_val;
+      abs_pos++;
+    }
+  } else {
+    const Number* top_y_c_val = dynamic_cast<const DenseVector*>(GetRawPtr(top->y_c()))->Values();
+    if (!top_y_c_val)
+      printf("\nShiftVector::getDVector(): Error: top_y_c_val is NULL.");
+    for (int i=0;i<top_y_c_dim;i++){
+      exp_values[abs_pos] = 0;
+      if (top_y_c_val)
+	exp_values[abs_pos] = top_y_c_val[i];
+      abs_pos++;
+    }
   }
-  for (int i=0;i<top_y_d_dim;i++){
-    exp_values[abs_pos] = 0;
-    if (top_y_d_val)
-      exp_values[abs_pos] = top_y_d_val[i];
-    abs_pos++;
+  if (dynamic_cast<const DenseVector*>(GetRawPtr(top->y_d()))->IsHomogeneous()) {
+    hom_val = dynamic_cast<const DenseVector*>(GetRawPtr(top->y_d()))->Scalar();
+    for (int i=0;i<top_y_d_dim;i++){
+      exp_values[abs_pos] = hom_val;
+      abs_pos++;
+    }
+  } else {
+    const Number* top_y_d_val = dynamic_cast<const DenseVector*>(GetRawPtr(top->y_d()))->Values();
+    if (!top_y_d_val)
+      printf("\nShiftVector::getDVector(): Error: top_y_d_val is NULL.");
+    for (int i=0;i<top_y_d_dim;i++){
+      exp_values[abs_pos] = 0;
+      if (top_y_d_val)
+	exp_values[abs_pos] = top_y_d_val[i];
+      abs_pos++;
+    }
   }
-  for (int i=0;i<x_dim;i++){
-    exp_values[abs_pos] = 0;
-    if (x_values)
-      exp_values[abs_pos] = x_values[i];
-    abs_pos++;
+  if (x->IsHomogeneous()) {
+    hom_val = x->Scalar();
+    for (int i=0;i<x_dim;i++){
+      exp_values[abs_pos] = hom_val;
+      abs_pos++;
+    }
+  } else {
+    const Number* x_values = x->Values();
+    if (!x_values)
+      printf("\nShiftVector::getDVector(): Error: x_values is NULL.");
+    for (int i=0;i<x_dim;i++){
+      exp_values[abs_pos] = 0;
+      if (x_values)
+	exp_values[abs_pos] = x_values[i];
+      abs_pos++;
+    }
   }
-  for (int i=0;i<y_c_dim;i++){
-    exp_values[abs_pos] = 0;
-    if (y_c_values)
-      exp_values[abs_pos] = y_c_values[i];
-    abs_pos++;
+  if (y_c->IsHomogeneous()) {
+    hom_val = y_c->Scalar();
+    for (int i=0;i<y_c_dim;i++){
+      exp_values[abs_pos] = hom_val;
+      abs_pos++;
+    }
+  } else {
+    const Number* y_c_values = y_c->Values();
+    if (!y_c_values)
+      printf("\nShiftVector::getDVector(): Error: y_c_values is NULL.");
+    for (int i=0;i<y_c_dim;i++){
+      exp_values[abs_pos] = 0;
+      if (y_c_values)
+	exp_values[abs_pos] = y_c_values[i];
+      abs_pos++;
+    }
   }
-  for (int i=0;i<y_d_dim;i++){
-    exp_values[abs_pos] = 0;
-    if (y_d_values)
-      exp_values[abs_pos] = y_d_values[i];
-    abs_pos++;
+   if (y_d->IsHomogeneous()) {
+    hom_val = y_d->Scalar();
+    for (int i=0;i<y_d_dim;i++){
+      exp_values[abs_pos] = hom_val;
+      abs_pos++;
+    }
+ } else {
+    const Number* y_d_values = y_d->Values();
+    if (!y_d_values)
+      printf("\nShiftVector::getDVector(): Error: y_d_values is NULL.");
+    for (int i=0;i<y_d_dim;i++){
+      exp_values[abs_pos] = 0;
+      if (y_d_values)
+	exp_values[abs_pos] = y_d_values[i];
+      abs_pos++;
+    }
   }
   retval->SetValues(exp_values);
   return retval;
@@ -916,38 +1046,94 @@ ShiftVector::ShiftVector(const ShiftVector& rhs)
   t_y_d_space = new DenseVectorSpace(rhs.top()->y_d()->Dim());
 
   top_ = t_space->MakeNewIteratesVector();
-  top_ = dynamic_cast<IteratesVector*>(rhs.top()->MakeNewCopy());
+  top_->Set(0.0);
+
+  t_x_space = new DenseVectorSpace(rhs.top()->x()->Dim());
+  SmartPtr<DenseVector> t_x_ = t_x_space->MakeNewDenseVector();
+
+  if (dynamic_cast<const DenseVector*>(GetRawPtr(rhs.top()->x()))->IsHomogeneous())
+      t_x_->Set(dynamic_cast<const DenseVector*>(GetRawPtr(rhs.top()->x()))->Scalar());
+  else {
+    const Number* t_x_values = dynamic_cast<const DenseVector*>(GetRawPtr(rhs.top()->x()))->Values();
+    if (!t_x_values)
+      printf("\nShiftVector::ShiftVector(): Error: t_x_values is NULL.");
+    else {
+      Number* t_x__values = new Number[t_x_->Dim()];
+      std::copy(t_x_values, t_x_values+t_x_->Dim(),t_x__values);
+      t_x_->SetValues(t_x__values);
+    }
+  }
+  t_y_c_space = new DenseVectorSpace(rhs.top()->y_c()->Dim());
+  SmartPtr<DenseVector> t_y_c_ = t_y_c_space->MakeNewDenseVector();
+
+  if (dynamic_cast<const DenseVector*>(GetRawPtr(rhs.top()->y_c()))->IsHomogeneous())
+      t_y_c_->Set(dynamic_cast<const DenseVector*>(GetRawPtr(rhs.top()->y_c()))->Scalar());
+  else {
+    const Number* t_y_c_values = dynamic_cast<const DenseVector*>(GetRawPtr(rhs.top()->y_c()))->Values();
+    if (!t_y_c_values)
+      printf("\nShiftVector::ShiftVector(): Error: t_y_c_values is NULL.");
+    else {
+      Number* t_y_c__values = new Number[t_y_c_->Dim()];
+      std::copy(t_y_c_values, t_y_c_values+t_y_c_->Dim(),t_y_c__values);
+      t_y_c_->SetValues(t_y_c__values);
+    }
+  }
+  t_y_d_space = new DenseVectorSpace(rhs.top()->y_d()->Dim());
+  SmartPtr<DenseVector> t_y_d_ = t_y_d_space->MakeNewDenseVector();
+
+  if (dynamic_cast<const DenseVector*>(GetRawPtr(rhs.top()->y_d()))->IsHomogeneous())
+      t_y_d_->Set(dynamic_cast<const DenseVector*>(GetRawPtr(rhs.top()->y_d()))->Scalar());
+  else {
+    const Number* t_y_d_values = dynamic_cast<const DenseVector*>(GetRawPtr(rhs.top()->y_d()))->Values();
+    if (!t_y_d_values)
+      printf("\nShiftVector::ShiftVector(): Error: t_y_d_values is NULL.");
+    else {
+      Number* t_y_d__values = new Number[t_y_d_->Dim()];
+      std::copy(t_y_d_values, t_y_d_values+t_y_d_->Dim(),t_y_d__values);
+      t_y_d_->SetValues(t_y_d__values);
+    }
+  }
+
+  top_->Set_x_NonConst(*t_x_);
+  top_->Set_y_c_NonConst(*t_y_c_);
+  top_->Set_y_d_NonConst(*t_y_d_);
 
   x_space = new DenseVectorSpace(rhs.x()->Dim());
   x_ = x_space->MakeNewDenseVector();
+  if (rhs.x()->IsHomogeneous())
+    x_->Set(rhs.x()->Scalar());
+  else {
+    const Number* x_values = rhs.x()->Values();
+    Number* x__values = new Number[rhs.x()->Dim()];
+    std::copy(x_values, x_values+rhs.x()->Dim(),x__values);
+    x_->SetValues(x__values);
+  }
 
   y_c_space = new DenseVectorSpace(rhs.y_c()->Dim());
   y_c_ = y_c_space->MakeNewDenseVector();
+  if (rhs.y_c()->IsHomogeneous())
+    y_c_->Set(rhs.y_c()->Scalar());
+  else {
+    const Number* y_c_values = rhs.y_c()->Values();
+    Number* y_c__values = new Number[rhs.y_c()->Dim()];
+    std::copy(y_c_values, y_c_values+rhs.y_c()->Dim(),y_c__values);
+    y_c_->SetValues(y_c__values);
+  }
 
   y_d_space = new DenseVectorSpace(rhs.y_d()->Dim());
   y_d_ = y_d_space->MakeNewDenseVector();
-
-  const Number* x_values = rhs.x()->Values();
-  Number* x__values = new Number[rhs.x()->Dim()];
-  std::copy(x_values, x_values+rhs.x()->Dim(),x__values);
-  x_->SetValues(x__values);
-
-  const Number* y_c_values = rhs.y_c()->Values();
-  Number* y_c__values = new Number[rhs.y_c()->Dim()];
-  std::copy(y_c_values, y_c_values+rhs.y_c()->Dim(),y_c__values);
-  y_c_->SetValues(y_c__values);
-
-  y_d_space = new DenseVectorSpace(rhs.y_d()->Dim());
-  y_d_ = y_d_space->MakeNewDenseVector();
-
-  const Number* y_d_values = rhs.y_d()->Values();
-  Number* y_d__values = new Number[rhs.y_d()->Dim()];
-  std::copy(y_d_values, y_d_values+rhs.y_d()->Dim(),y_d__values);
-  y_d_->SetValues(y_d__values);
+  if (rhs.y_d()->IsHomogeneous())
+    y_d_->Set(rhs.y_d()->Scalar());
+  else {
+    const Number* y_d_values = rhs.y_d()->Values();
+    Number* y_d__values = new Number[rhs.y_d()->Dim()];
+    std::copy(y_d_values, y_d_values+rhs.y_d()->Dim(),y_d__values);
+    y_d_->SetValues(y_d__values);
+  }
 
   exp_space_ = new DenseVectorSpace(rhs.getDVector()->Dim());
   exp_ = exp_space_->MakeNewDenseVector();
-  exp_ = dynamic_cast<DenseVector*>((rhs.getDVector()->MakeNewCopy()));
+  exp_ = getDVector(top_,x_,y_c_,y_d_);
 
   //  owner_space_ = new ShiftVectorSpace(top_->OwnerSpace,x_->OwnerSpace(),y_c_->OwnerSpace(),y_d_->OwnerSpace());
 
@@ -962,12 +1148,13 @@ ShiftVector& ShiftVector::operator=(const ShiftVector &rhs)
 {
   if (this!= &rhs)
     {
-      this->top(rhs.top());
-      this->x(rhs.x());
-      this->y_c(rhs.y_c());
-      this->y_d(rhs.y_d());
+      top(rhs.top());
+      x(rhs.x());
+      y_c(rhs.y_c());
+      y_d(rhs.y_d());
       //  this->ownerspace(rhs.OwnerSpace());
-      this->exp(rhs.getDVector());
+      exp(rhs.getDVector());
+      Dim(rhs.Dim());
     }
   return *this;
 }
@@ -1017,10 +1204,13 @@ void ShiftVector::Print_Non_Exp(SmartPtr<const Journalist> jnlst, EJournalLevel 
   char  buffer[63];
   top_->Print(jnlst,level,category,name,indent,prefix);
   sprintf(buffer,"%s_x  ",prefix.c_str());
+  printf("\n");
   x_->Print(jnlst,level,category,name,indent,prefix);
   sprintf(buffer,"%s_y_c",prefix.c_str());
+  printf("\n");
   y_c_->Print(jnlst,level,category,name,indent,prefix);
   sprintf(buffer,"%s_y_d",prefix.c_str());
+  printf("\n");
   y_d_->Print(jnlst,level,category,name,indent,prefix);
 }
 
@@ -1029,10 +1219,13 @@ void ShiftVector::Print_Non_Exp(const Journalist& jnlst, EJournalLevel level, EJ
   char  buffer[63];
   top_->Print(jnlst,level,category,name,indent,prefix);
   sprintf(buffer,"%s_x  ",prefix.c_str());
+  printf("\n");
   x_->Print(jnlst,level,category,name,indent,prefix);
   sprintf(buffer,"%s_y_c",prefix.c_str());
+  printf("\n");
   y_c_->Print(jnlst,level,category,name,indent,prefix);
   sprintf(buffer,"%s_y_d",prefix.c_str());
+  printf("\n");
   y_d_->Print(jnlst,level,category,name,indent,prefix);
 }
 
@@ -1111,9 +1304,20 @@ Index ShiftVector::Dim() const
   return dim_;
 }
 
-void ShiftVector::Set(Number alpha)
+void ShiftVector::Set(const Number& alpha)
 {
-  top_->Set(alpha);
+  t_x_ = t_x_space->MakeNewDenseVector();
+  t_y_c_= t_y_c_space->MakeNewDenseVector();
+  t_y_d_= t_y_d_space->MakeNewDenseVector();
+
+  t_x_->Set(alpha);
+  t_y_c_->Set(alpha);
+  t_y_d_->Set(alpha);
+
+  top_->Set_x_NonConst(*t_x_);
+  top_->Set_y_c_NonConst(*t_y_c_);
+  top_->Set_y_d_NonConst(*t_y_d_);
+
   x_->Set(alpha);
   y_c_->Set(alpha);
   y_d_->Set(alpha);
@@ -1160,28 +1364,118 @@ SmartPtr<DenseVector> ShiftVector::y_d() const
   return y_d_;
 }
 
+void ShiftVector::Dim(const Index& dim)
+{
+  dim_ = dim;
+}
+
 void ShiftVector::top(SmartPtr<IteratesVector>top)
 {
   top_dim_ = top->Dim();
-  top_ = top;
+  top_->Set(0.0);
+
+  t_x_space = new DenseVectorSpace(top->x()->Dim());
+  SmartPtr<DenseVector> t_x_ = t_x_space->MakeNewDenseVector();
+
+  if (dynamic_cast<const DenseVector*>(GetRawPtr(top->x()))->IsHomogeneous())
+    t_x_->Set(dynamic_cast<const DenseVector*>(GetRawPtr(top->x()))->Scalar());
+  else {
+    const Number* t_x_values = dynamic_cast<const DenseVector*>(GetRawPtr(top->x()))->Values();
+    if (!t_x_values)
+      printf("\nShiftVector::ShiftVector(): Error: t_x_values is NULL.");
+    else {
+      Number* t_x__values = new Number[t_x_->Dim()];
+      std::copy(t_x_values, t_x_values+t_x_->Dim(),t_x__values);
+      t_x_->SetValues(t_x__values);
+    }
+  }
+  t_y_c_space = new DenseVectorSpace(top->y_c()->Dim());
+  SmartPtr<DenseVector> t_y_c_ = t_y_c_space->MakeNewDenseVector();
+
+  if (dynamic_cast<const DenseVector*>(GetRawPtr(top->y_c()))->IsHomogeneous())
+    t_y_c_->Set(dynamic_cast<const DenseVector*>(GetRawPtr(top->y_c()))->Scalar());
+  else {
+    const Number* t_y_c_values = dynamic_cast<const DenseVector*>(GetRawPtr(top->y_c()))->Values();
+    if (!t_y_c_values)
+      printf("\nShiftVector::ShiftVector(): Error: t_y_c_values is NULL.");
+    else {
+      Number* t_y_c__values = new Number[t_y_c_->Dim()];
+      std::copy(t_y_c_values, t_y_c_values+t_y_c_->Dim(),t_y_c__values);
+      t_y_c_->SetValues(t_y_c__values);
+    }
+  }
+  t_y_d_space = new DenseVectorSpace(top->y_d()->Dim());
+  SmartPtr<DenseVector> t_y_d_ = t_y_d_space->MakeNewDenseVector();
+
+if (dynamic_cast<const DenseVector*>(GetRawPtr(top->y_d()))->IsHomogeneous())
+    t_y_d_->Set(dynamic_cast<const DenseVector*>(GetRawPtr(top->y_d()))->Scalar());
+  else {
+    const Number* t_y_d_values = dynamic_cast<const DenseVector*>(GetRawPtr(top->y_d()))->Values();
+    if (!t_y_d_values)
+      printf("\nShiftVector::ShiftVector(): Error: t_y_d_values is NULL.");
+    else {
+      Number* t_y_d__values = new Number[t_y_d_->Dim()];
+      std::copy(t_y_d_values, t_y_d_values+t_y_d_->Dim(),t_y_d__values);
+      t_y_d_->SetValues(t_y_d__values);
+    }
+  }
+    top_->Set_x_NonConst(*t_x_);
+    top_->Set_y_c_NonConst(*t_y_c_);
+    top_->Set_y_d_NonConst(*t_y_d_);
 }
 
 void ShiftVector::x(SmartPtr<DenseVector>x)
 {
-  x_dim_ = x->Dim();
-  x_ = x;
+  x_space = new DenseVectorSpace(x->Dim());
+  x_ = x_space->MakeNewDenseVector();
+
+  if (x->IsHomogeneous())
+    x_->Set(x->Scalar());
+  else {
+    const Number* x_values = x->Values();
+    if (!x_values)
+      printf("\nShiftVector::ShiftVector(): Error: x_values is NULL.");
+    Number* x__values = new Number[x->Dim()];
+    std::copy(x_values, x_values+x->Dim(),x__values);
+    x_->SetValues(x__values);
+  }
+  x_dim_ = x_->Dim();
 }
 
 void ShiftVector::y_c(SmartPtr<DenseVector>y_c)
 {
-  y_c_dim_ = y_c->Dim();
-  y_c_ = y_c;
+  y_c_space = new DenseVectorSpace(y_c->Dim());
+  y_c_ = y_c_space->MakeNewDenseVector();
+
+  if (y_c->IsHomogeneous())
+    y_c_->Set(y_c->Scalar());
+  else {
+    const Number* y_c_values = y_c->Values();
+    if (!y_c_values)
+      printf("\nShiftVector::ShiftVector(): Error: y_c_values is NULL.");
+    Number* y_c__values = new Number[y_c->Dim()];
+    std::copy(y_c_values, y_c_values+y_c->Dim(),y_c__values);
+    y_c_->SetValues(y_c__values);
+  }
+  y_c_dim_ = y_c_->Dim();
 }
 
 void ShiftVector::y_d(SmartPtr<DenseVector>y_d)
 {
-  y_d_dim_ = y_d->Dim();
-  y_d_ = y_d;
+  y_d_space = new DenseVectorSpace(y_d->Dim());
+  y_d_ = y_d_space->MakeNewDenseVector();
+
+  if (y_d->IsHomogeneous())
+    y_d_->Set(y_d->Scalar());
+  else {
+    const Number* y_d_values = y_d->Values();
+    if (!y_d_values)
+      printf("\nShiftVector::ShiftVector(): Error: y_d_values is NULL.");
+    Number* y_d__values = new Number[y_d->Dim()];
+    std::copy(y_d_values, y_d_values+y_d->Dim(),y_d__values);
+    y_d_->SetValues(y_d__values);
+  }
+  y_d_dim_ = y_d_->Dim();
 }
 /*
 void ShiftVector::ownerspace(SmartPtr<ShiftVectorSpace>ospace)
@@ -1828,6 +2122,18 @@ SmartPtr<const DenseVector>  y_d_ = dynamic_cast<const DenseVector*>(GetRawPtr(a
 
   top_dim_ = n_x_+n_u_+n_c_+n_d_;
   rhs_dim_ = top_dim_+int((n_x_+n_c_+n_d_)/n_i_);
+
+
+  _x_intervalIDs = x_space->GetIntegerMetaData("intervalID");
+
+  _c_intervalIDs = c_space->GetIntegerMetaData("intervalID");
+
+  _d_intervalIDs = d_space->GetIntegerMetaData("intervalID");
+
+
+
+
+
 }
 
 /* apply GMRES-approximation of a split to all intervals and decide for the smartest split*/
@@ -2028,8 +2334,13 @@ SplitApproximation LinearizeKKT::applyAlgorithmOnInterval(SmartPtr<IpoptApplicat
   SmartPtr<MultiVectorMatrix> sense = sense_space->MakeNewMultiVectorMatrix();
   SmartPtr<DenseVectorSpace> res_space = new DenseVectorSpace(sense->NRows());
   SmartPtr<DenseVector> res_sense = res_space->MakeNewDenseVector();
-  SmartPtr<ShiftVector> rhs, z_cond, lhs, x0;
-
+  SmartPtr<const IteratesVectorSpace> top_space;
+  SmartPtr<IteratesVector> rhs_top;
+  SmartPtr<DenseVector> rhs_x,rhs_y_c,rhs_y_d;
+  SmartPtr<ShiftVector> rhs;
+  SmartPtr<ShiftVector> z_cond;
+  SmartPtr<ShiftVector> lhs;
+  SmartPtr<ShiftVector> x0;
   Number tolo;
   Index n_m,n_rst;
 
@@ -2055,27 +2366,210 @@ SplitApproximation LinearizeKKT::applyAlgorithmOnInterval(SmartPtr<IpoptApplicat
       u_i_ = shrink(x_i_,u_indices_);
 
       // create ShiftVector for rhs
-      SmartPtr<IteratesVector> rhs_top = app->IpoptDataObject()->curr()->MakeNewIteratesVector();
-      SmartPtr<DenseVector> rhs_x,rhs_y_c,rhs_y_d;
+      top_space = dynamic_cast<const IteratesVectorSpace*>(GetRawPtr(app->IpoptDataObject()->curr()->OwnerSpace()));
+      rhs_top = top_space->MakeNewIteratesVector();
       rhs_top->Set(0.0);
       rhs_top->Set_x_NonConst(*x_i_);
       rhs_top->Set_y_c_NonConst(*y_c_i_);
       rhs_top->Set_y_d_NonConst(*y_d_i_);
-      rhs_x = shrink(x_i_,shift_x_indices_);
-      rhs_y_c = shrink(y_c_i_,shift_c_indices_);
-      rhs_y_d = shrink(y_d_i_,shift_d_indices_);
-      rhs = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
 
+      SmartPtr<DenseVectorSpace> x_sp = new DenseVectorSpace(shift_x_indices_.size());
+      rhs_x = x_sp->MakeNewDenseVector();
+      rhs_x = shrink(x_i_,shift_x_indices_);
+      SmartPtr<DenseVectorSpace> y_c_sp = new DenseVectorSpace(shift_c_indices_.size());
+      rhs_y_c = y_c_sp->MakeNewDenseVector();
+      rhs_y_c = shrink(y_c_i_,shift_c_indices_);
+      SmartPtr<DenseVectorSpace> y_d_sp = new DenseVectorSpace(shift_d_indices_.size());
+      rhs_y_d = y_d_sp->MakeNewDenseVector();
+      rhs_y_d = shrink(y_d_i_,shift_d_indices_);
+
+      rhs = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
+      //      rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs");
       // create x0
       x0 = new ShiftVector(*rhs);
       x0->Set(0.0);
+
+      //////TESTING IMPLEMENTATION///////////////////////////////////
+      rhs_top = top_space->MakeNewIteratesVector();
+      rhs_top->Set(0.0);
+      rhs_x->Set(0.0);
+      rhs_y_c->Set(1.0);
+      rhs_y_d->Set(0.0);
+      SmartPtr<ShiftVector> bot = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
+
+
+
+      rhs_top->Set_y_c_NonConst(*rhs_y_c);
+      rhs_y_c = y_c_sp->MakeNewDenseVector();
+      rhs_y_c->Set(0.0);
+      SmartPtr<ShiftVector> top = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
+      SmartPtr<ShiftVector> hot = new ShiftVector(*top);
+      hot->Set(1.0);
+
+      rhs_top = top_space->MakeNewIteratesVector();
+      rhs_top->Set(1.0);
+      rhs_x->Set(0.0);
+      rhs_y_c->Set(0.0);
+      rhs_y_d->Set(0.0);
+      SmartPtr<ShiftVector> TPA = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
+      //      TPA->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"TPA - 1s?");
+
+  //     hot = computeAMultVector(rhs);
+  // printf("\n         the end of the world is here!");
+  // printf("\n         the end of the world is here!");
+  // printf("\n         the end of the world is here!");
+  // printf("\n         the end of the world is here!\n");
+      //hot->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"TPA - 1s?++");
+      /*
+      printf("\n top norm ist: %f  bot norm ist: %f  hot norm ist: %f",top->Nrm2(),bot->Nrm2(),hot->Nrm2());
+
+      printf("\n bot dot top ist: %f,  top dot hot ist: %f,  bot dot hot ist: %f",bot->Dot(*top),top->Dot(*hot),bot->Dot(*hot));
+
+      bot->Scal(1/bot->Nrm2());
+
+      printf("\n bot norm nach skalierung ist: %f",bot->Nrm2());
+
+      bot->AddOneVector(1.0,*hot,0.0);
+      bot->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"hot");
+    printf("\n\n");
+
+      hot->AddTwoVectors(1.0,*top,1.0,*bot,1.0);
+      hot->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"top+2hot");
+    printf("\n\n");
+
+      top->AddTwoVectors(1.0,*bot,1.0,*bot,0.0);
+      top->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"2hot");
+    printf("\n\n");
+
+
+    top->Set(1.0);
+      top->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"1s preA");
+    printf("\n\n");
+    //////////////////////////////////////ALLES GUT BIS HIER ////////////////////////
+    lhs = computeAMultVector(top);
+
+      lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"1s postA");
+    printf("\n\n");
+
+
+
+      bot = new ShiftVector(*hot);
+      bot->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"hot");
+    printf("\n\n");
+      hot->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"hot");
+    printf("\n\n");
+    hot->Set(0);
+      bot->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"0s");
+    printf("\n\n");
+      hot->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"hot");
+    printf("\n\n");
+
+    /*      //      printf("\n Nrm2 of x0 is %e.",x0->Nrm2());
+          x0->Set(1.0);
+
+
+
+      // printf("\nrhs times x0 is %e. Should be 0.",rhs->Dot(*x0));
+      // printf("\nrhs times rhs is %e. Should be %e.",rhs->Dot(*rhs),rhs->Nrm2()*rhs->Nrm2());
+
+      // printf("\n Nrm2 of x0 is %e. Should be 0.",x0->Nrm2());
+      rhs_top->Set(1.0);
+      rhs_x->Set(1.0);
+      rhs_y_c->Set(1.0);
+      rhs_y_d->Set(1);
+      //      lhs = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
+      // printf("\n Nrm2 of lhs is %e. Should be 1.\n",lhs->Nrm2());
+
+      // printf("\n\n");
+      // lhs->Print_Non_Exp(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shldb1");
+      // printf("\n\n");
+      rhs_y_d->Set(4);
+      x0 = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
+    printf("\n\n77\n\n");
+      lhs = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
+      printf("\n");
+      lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"old");
+      printf("\n\n");
+      lhs->Scal(0.0);
+    printf("\n\nxx\n");
+      x0 = new ShiftVector(*lhs);
+      lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"old");
+      printf("\n\n");
+
+      // printf("\n Nrm2 of lhs is %e. Should be 2 or 4 due to \"->Set(4)\".",lhs->Nrm2());
+      // printf("\n\n");
+      //      x0->AddOneVector(1.0,*lhs,1.0);
+      //      x0->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shldb8");
+      // printf("\n\n");
+      // x0->Print_Non_Exp(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shldb8");
+      // printf("\n\n");
+      //      x0->AddTwoVectors(1.0,*lhs,1.0,*lhs,1.0);
+      // x0->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shldb16");
+      // printf("\n\n");
+      // x0->Print_Non_Exp(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shldb16");
+      // printf("\n\n");
+      // const Number rr = lhs->Nrm2();
+      // assert(rr);
+      // lhs->Scal(1/rr);
+      // //      printf("\n Nrm2 of lhs is %e. Should be 1 due to scaling towards unity.",lhs->Nrm2());
+      // x0->Set(0.0);
+      // SmartPtr<ShiftVector> r;               // = computeR(rhs,x0);
+      // r->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"compRhs");
+      // printf("\n\n");
+      // rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs");
+      // printf("\n\n");
+      // rhs->Print_Non_Exp(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs");
+      // printf("\n\n");
+      //      r = computeAMultVector(x0);
+      // r->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"Ax0");
+      // printf("\n\n");
+      // r->Print_Non_Exp(*jnl_, J_INSUPPRESSIBLE, J_DBG,"Ax0");
+      // printf("\n\n");
+      Number* moo = new Number[x_i_->Dim()];
+      for (int i=0;i<x_i_->Dim();i++) {
+	if (i<230)
+	  moo[i] = i+1;
+	else
+	  moo[i] = 0;
+      }
+      moo[0] = 0;
+
+      SmartPtr<DenseVector> rhs_t_x = x_i_->MakeNewDenseVector();
+      rhs_t_x->SetValues(moo);
+      rhs_y_c = x_sp->MakeNewDenseVector();
+      rhs_y_d = y_d_sp->MakeNewDenseVector();
+      rhs_y_c->Set(1);
+      rhs_y_d->Set(1);
+      //      rhs_top->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"foo");
+      rhs_top = app->IpoptDataObject()->curr()->MakeNewIteratesVector();
+//      rhs_top->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"nan?");
+      rhs_top->Set_y_c_NonConst(*rhs_y_c);
+      rhs_top->Set_y_d_NonConst(*rhs_y_d);
+      rhs_top->Set_x_NonConst(*rhs_t_x);
+      rhs_top->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"1!!");
+    printf("\n\n88\n");
+      lhs = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
+
+      printf("\n");
+      lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"new 1s");
+      // printf("\n\n");
+      // lhs->Print_Non_Exp(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shldb1234");
+      // printf("\n\n");
+
+      */
+
+
+   //      r = computeAMultVector(lhs);
+   //       r->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shldb1234");
+      ///      printf("\n\n");
+      // r->Print_Non_Exp(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shldb1");
+      // printf("\n\n");
 
       // compute solution of the GMRES-Step
       assignGMRESOptions(app->Options(),tolo,n_m,n_rst);
       z_cond = computeGMRES(rhs,x0,tolo,n_m);
 
       // rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs_postgmres");
-
       // x0->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"x0_postgmres");
       // z_cond->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"z_cond");
 
@@ -2087,8 +2581,8 @@ SplitApproximation LinearizeKKT::applyAlgorithmOnInterval(SmartPtr<IpoptApplicat
       sense->SetVector(s_count,*z_postsplit);
       s_count++;
 
-      printf("\n\n");
-      lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"gmrhs");
+      // printf("\n\n");
+      // lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"gmrhs");
 ///////////////////////////////////////////////////////
 /////////////////M  I   N   R   E   S//////////////////
 ///////////////////////////////////////////////////////
@@ -2169,6 +2663,7 @@ SmartPtr<ShiftVector> LinearizeKKT::computeGMRES(SmartPtr<ShiftVector>b,SmartPtr
   std::vector<SmartPtr<ShiftVector> > w(n_max+1);
 
   Number beta;
+  Index g_cnt = 0;
   std::vector<Number> h((n_max+1)*(n_max+1));
   std::vector<Number> s(n_max+1);
   std::vector<Number> c(n_max+1);
@@ -2177,38 +2672,48 @@ SmartPtr<ShiftVector> LinearizeKKT::computeGMRES(SmartPtr<ShiftVector>b,SmartPtr
 
   SmartPtr<ShiftVector> tmp;
 
+  // for residual output
+  std::string fname = "residuals.dat";
+  std::ofstream residuals;
+  residuals.open(fname.c_str());
+  char buffer[63];
+  residuals << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
+
   // preloop inital var values
+  printf("\nnorm of r is %f",r->Nrm2());
   v[0]= computeV(r);
   gamma[0] = r->Nrm2();
+  printf("\ngamma[0] is %f",r->Nrm2());
   //  printf("\ncomputeGMRES(): v[0] assigned. gamma[0] assigned.");
 
   // outer loop
   for (Index j=0; j<n_max;j++) {
   //  printf("\ncomputeGMRES(): outer loop iteration started. j = %d",j);
 
+    w[j] = computeAMultVector(v[j]);
+
     // update h[i,j] entries
     for (Index i=0; i<=j;i++) {
 //      printf("\ncomputeGMRES(): accessing v[%d] and v[%d].",j,i);
-      tmp = computeAMultVector(v[j]);
-      h[i+j*n_max] = v[i]->Dot(*tmp);
+      h[i+j*n_max] = v[i]->Dot(*w[j]);
 //      printf("\ncomputeGMRES(): h[%d] assigned.",i+j*n_max);
     }
 
     // calculate w[j]
 //    printf("\ncomputeGMRES(): accessing v[%d].",j);
-    w[j] = computeAMultVector(v[j]);
 
     for (Index i=0;i<=j;i++) {
 //      printf("\ncomputeGMRES(): accessing v[%d], h[%d].",i,i+j*n_max);
-      tmp = new ShiftVector(*v[i]);
-      tmp->Scal(-1.0*h[i+j*n_max]);
-      w[j]->AddOneVector(1.0,*tmp,1.0);
+      w[j]->AddOneVector(-1.0*h[i+j*n_max],*v[i],1.0);
     }
 //    printf("\ncomputeGMRES(): w[%d] assigned.",j);
 
     // expand h, first step
 //    printf("\ncomputeGMRES(): accessing w[%d].",j);
     h[j+1+j*n_max] = w[j]->Nrm2();
+
+    /*CHECKED TILL HERE: SEEMS TO BE 1:1 EXACT.*/
+
 //    printf("\ncomputeGMRES(): h[%d] assigned.",j+1+j*n_max);
 
     /////////////////////////////////////////////////
@@ -2237,6 +2742,7 @@ SmartPtr<ShiftVector> LinearizeKKT::computeGMRES(SmartPtr<ShiftVector>b,SmartPtr
     gamma[j+1] = -s[j+1]*gamma[j];
 //    printf("\ncomputeGMRES(): gamma[%d] = %e, gamma[%d] = %e.",j+1,gamma[j+1],j,gamma[j]);
     gamma[j] = c[j+1]*gamma[j];
+    g_cnt++;
 //    printf("\ncomputeGMRES(): gamma[%d] and gamma[%d] assigned.",j+1,j);
 
     // check quality of current solution
@@ -2249,6 +2755,9 @@ SmartPtr<ShiftVector> LinearizeKKT::computeGMRES(SmartPtr<ShiftVector>b,SmartPtr
       assert(h[j+1+j*n_max]);
       tmp->Scal(1/h[j+1+j*n_max]);
       v[j+1] = new ShiftVector(*tmp);
+      sprintf(buffer,"v[%d]",j+1);
+      printf("\n\n");
+      v[j+1]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,buffer);
 //      printf("\ncomputeGMRES(): v[%d] assigned.",j+1);
 
       // target accuracy achieved - calculate solution
@@ -2264,7 +2773,7 @@ SmartPtr<ShiftVector> LinearizeKKT::computeGMRES(SmartPtr<ShiftVector>b,SmartPtr
 //	  printf("\ncomputeGMRES(): accessing h[%d] and y[%d].",i+k*n_max,k);
 	  beta += h[i+k*n_max]*y[k];
 	}
-	y[i]= 1/h[i+i*n_max]*(gamma[i]-beta);
+	y[i]= (1/h[i+i*n_max])*(gamma[i]-beta);
 //	printf("\ncomputeGMRES(): y[%d] assigned.",i);
       }
 
@@ -2276,7 +2785,276 @@ SmartPtr<ShiftVector> LinearizeKKT::computeGMRES(SmartPtr<ShiftVector>b,SmartPtr
 //      printf("\ncomputeGMRES(): x calculated.");
       break;
     }
+
+    /* set up current solution to calculate absolute residuum and write it to file
+       in order to check for convergence */
+        for (Index i=j;i>=0;i--) { // check this!
+      assert(h[i+i*n_max]);
+      beta = 0;
+      for (Index k=i+1;k<=j;k++) {
+	beta += h[i+k*n_max]*y[k];
+      }
+      y[i]= 1/h[i+i*n_max]*(gamma[i]-beta);
+    }
+    for (Index i=0; i<=j;i++) {
+      x->AddTwoVectors(y[i],*v[i],0.0,*v[i],1.0);
+    }
+    SmartPtr<ShiftVector> fooo = computeAMultVector(x);
+    fooo->AddOneVector(-1.0,*b,1.0);
+    Number residual = fooo->Nrm2();
+
+    //write residual into residuals.dat file for python access
+    sprintf(buffer,"\nresidual[%d] = %e",j,residual);
+    residuals << buffer;
+    x = new ShiftVector(*x0);
   }
+  residuals << "\n\n#end of file";
+  residuals.close();
+
+  //write gamma[j] into gamma.dat file for python access
+  fname = "gammas.dat";
+  std::ofstream gammas;
+  gammas.open(fname.c_str());
+  gammas << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
+  for (int i=0;i<g_cnt;i++) {
+    sprintf(buffer,"\ngamma[%d] = %e",i,gamma[i]);
+    gammas << buffer;
+  }
+  gammas << "\n\n#end of file";
+  gammas.close();
+
+
+  // print calculated values for comparative matters
+
+  for (int i=1;i<g_cnt;i++) {
+    sprintf(buffer,"v[%d]",i);
+      printf("\n\n");
+    v[i]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,buffer);
+    sprintf(buffer,"w[%d]",i-1);
+    w[i-1]->Scal(1/(h[i+(i-1)*n_max]));
+      printf("\n\n");
+    w[i-1]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,buffer);
+  }
+
+
+  return x;
+}
+
+SmartPtr<ShiftVector> LinearizeKKT::computeGMRESatn(SmartPtr<ShiftVector>b,SmartPtr<ShiftVector>x0,const Number& tol, const Index& n_max, const Index& n_rest)
+{
+  // initialize neccessary vars
+  SmartPtr<ShiftVector> r = computeR(b,x0);
+  SmartPtr<ShiftVector> x = new ShiftVector(*x0);
+
+  std::vector<SmartPtr<ShiftVector> > v(n_max+1);
+  std::vector<SmartPtr<ShiftVector> > w(n_max+1);
+
+  Number sino;
+  Number coso;
+  Number beta;
+  Index g_cnt = 0;
+  std::vector<Number> h((n_max+1)*(n_max+1));
+  std::vector<Number> h2((n_max+1)*(n_max+1));
+  std::vector<Number> s(n_max+1);
+  std::vector<Number> c(n_max+1);
+  std::vector<Number> gamma(n_max+1);
+  std::vector<Number> y(n_max);
+
+  SmartPtr<ShiftVector> tmp;
+
+  // for residual output
+  std::string fname = "r2esiduals.dat";
+  std::ofstream residuals;
+  residuals.open(fname.c_str());
+  char buffer[63];
+  residuals << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
+
+  // preloop inital var values
+  printf("\nnorm of r is %f",r->Nrm2());
+  v[0]= computeV(r);
+  gamma[0] = r->Nrm2();
+  printf("\ngamma[0] is %f",r->Nrm2());
+  //  printf("\ncomputeGMRES(): v[0] assigned. gamma[0] assigned.");
+
+  // outer loop
+  for (Index j=0; j<n_max;j++) {
+  //  printf("\ncomputeGMRES(): outer loop iteration started. j = %d",j);
+
+    w[j] = computeAMultVector(v[j]);
+
+    // update h[i,j] entries
+    for (Index i=0; i<=j;i++) {
+//      printf("\ncomputeGMRES(): accessing v[%d] and v[%d].",j,i);
+      h[i+j*n_max] = v[i]->Dot(*w[j]);
+//      printf("\ncomputeGMRES(): h[%d] assigned.",i+j*n_max);
+    }
+
+    // calculate w[j]
+//    printf("\ncomputeGMRES(): accessing v[%d].",j);
+
+    for (Index i=0;i<=j;i++) {
+//      printf("\ncomputeGMRES(): accessing v[%d], h[%d].",i,i+j*n_max);
+      w[j]->AddOneVector(-1.0*h[i+j*n_max],*v[i],1.0);
+    }
+//    printf("\ncomputeGMRES(): w[%d] assigned.",j);
+
+    // expand h, first step
+//    printf("\ncomputeGMRES(): accessing w[%d].",j);
+    h[j+1+j*n_max] = w[j]->Nrm2();
+
+    /*CHECKED TILL HERE: SEEMS TO BE 1:1 EXACT.*/
+
+    if (h[j+1+j*n_max]==0) {
+      for (int i=0;i<=j;i++) {
+	for (int k=0;k<=j;k++) {
+	  h2[i+k*n_max] = h[i+k*n_max];
+	}
+      }
+      h=h2;
+    } else {
+      v[j+1] = new ShiftVector(*w[j]);
+      v[j+1]->Scal(1/h[j+1+j*n_max]);
+    }
+
+    SmartPtr<DenseVectorSpace> eye_vs = new DenseVectorSpace(j+1);
+    SmartPtr<MultiVectorMatrixSpace> eye_space = new MultiVectorMatrixSpace(j+1,*eye_vs);
+    SmartPtr<DenseVector> eye_v;
+    for (int i=0;i<=j+1;i++) {
+      eye_v = eye_vs->MakeNewDenseVector();
+      sino = h[i+1+i*n_max]/sqrt(h[i+1+i*n_max]*h[i+1+i*n_max]+h[i+i*n_max]*h[i+i*n_max]);
+      coso = h[i+i*n_max]/sqrt(h[i+1+i*n_max]*h[i+1+i*n_max]+h[i+i*n_max]*h[i+i*n_max]);
+
+
+    }
+
+
+
+
+
+
+
+//    printf("\ncomputeGMRES(): h[%d] assigned.",j+1+j*n_max);
+
+    /////////////////////////////////////////////////
+    /////gangnam eigenvector stuff??    //////////
+    /////////////////////////////////////////////////
+
+    // expand h, second step - eigenvector style
+//    printf("\ncomputeGMRES(): accessing h[%d] and h[%d].",j+j*n_max,j+1+j*n_max);
+    beta = sqrt(h[j+j*n_max]*h[j+j*n_max]+h[j+1+j*n_max]*h[j+1+j*n_max]);
+//    printf("\ncomputeGMRES(): beta assigned.");
+
+//    printf("\ncomputeGMRES(): accessing h[%d].",j+1+j*n_max);
+    s[j+1] = h[j+1+j*n_max]/beta;
+//    printf("\ncomputeGMRES(): s[%d] assigned.",j+1);
+
+//    printf("\ncomputeGMRES(): accessing h[%d].",j+j*n_max);
+    c[j+1] = h[j+j*n_max]/beta;
+//    printf("\ncomputeGMRES(): c[%d] assigned.",j+1);
+
+    h[j+j*n_max] = beta;
+//    printf("\ncomputeGMRES(): h[%d] reassigned.",j+j*n_max);
+
+    // expand and update gammas
+//    printf("\ncomputeGMRES(): accessing s[%d], c[%d] and gamma[%d].",j+1,j+1,j);
+//    printf("\ncomputeGMRES(): gamma[%d] = -s[%d]*gamma[%d]",j+1,j+1,j);
+    gamma[j+1] = -s[j+1]*gamma[j];
+//    printf("\ncomputeGMRES(): gamma[%d] = %e, gamma[%d] = %e.",j+1,gamma[j+1],j,gamma[j]);
+    gamma[j] = c[j+1]*gamma[j];
+    g_cnt++;
+//    printf("\ncomputeGMRES(): gamma[%d] and gamma[%d] assigned.",j+1,j);
+
+    // check quality of current solution
+//    printf("\ncomputeGMRES(): gamma[%d] = %e, tol = %e",j+1,gamma[j+1],tol);
+    if ( ( (fabs(gamma[j+1]) > tol) && (!n_max) ) || (fabs(gamma[j+1]) > tol) && n_max && (j!=n_max-1))   {
+
+      // insufficient - update v[j+1]
+//      printf("\ncomputeGMRES(): accessing w[%d], h[%d] and gamma[%d].",j,j+1+j*n_max,j);
+      tmp = new ShiftVector(*w[j]);
+      assert(h[j+1+j*n_max]);
+      tmp->Scal(1/h[j+1+j*n_max]);
+      v[j+1] = new ShiftVector(*tmp);
+      sprintf(buffer,"v[%d]",j+1);
+      printf("\n\n");
+      v[j+1]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,buffer);
+//      printf("\ncomputeGMRES(): v[%d] assigned.",j+1);
+
+      // target accuracy achieved - calculate solution
+    } else {
+      // set up multipliers y[i]
+      for (Index i=j;i>=0;i--) { // check this!
+//	printf("\ncomputeGMRES(): accessing h[%d] and gamma[%d].",i+i*n_max,i);
+	assert(h[i+i*n_max]);
+
+	// set up sum[k] h[i+k*n_max] y[k]
+	beta = 0;
+	for (Index k=i+1;k<=j;k++) {
+//	  printf("\ncomputeGMRES(): accessing h[%d] and y[%d].",i+k*n_max,k);
+	  beta += h[i+k*n_max]*y[k];
+	}
+	y[i]= (1/h[i+i*n_max])*(gamma[i]-beta);
+//	printf("\ncomputeGMRES(): y[%d] assigned.",i);
+      }
+
+      // compute solution
+      for (Index i=0; i<=j;i++) {
+//	printf("\ncomputeGMRES(): accessing y[%d] = %e and v[%d].",i,y[i],i);
+	x->AddTwoVectors(y[i],*v[i],0.0,*v[i],1.0);
+      }
+//      printf("\ncomputeGMRES(): x calculated.");
+      break;
+    }
+
+    /* set up current solution to calculate absolute residuum and write it to file
+       in order to check for convergence */
+        for (Index i=j;i>=0;i--) { // check this!
+      assert(h[i+i*n_max]);
+      beta = 0;
+      for (Index k=i+1;k<=j;k++) {
+	beta += h[i+k*n_max]*y[k];
+      }
+      y[i]= 1/h[i+i*n_max]*(gamma[i]-beta);
+    }
+    for (Index i=0; i<=j;i++) {
+      x->AddTwoVectors(y[i],*v[i],0.0,*v[i],1.0);
+    }
+    SmartPtr<ShiftVector> fooo = computeAMultVector(x);
+    fooo->AddOneVector(-1.0,*b,1.0);
+    Number residual = fooo->Nrm2();
+
+    //write residual into residuals.dat file for python access
+    sprintf(buffer,"\nresidual[%d] = %e",j,residual);
+    residuals << buffer;
+    x = new ShiftVector(*x0);
+  }
+  residuals << "\n\n#end of file";
+  residuals.close();
+
+  //write gamma[j] into gamma.dat file for python access
+  fname = "g2ammas.dat";
+  std::ofstream gammas;
+  gammas.open(fname.c_str());
+  gammas << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
+  for (int i=0;i<g_cnt;i++) {
+    sprintf(buffer,"\ngamma[%d] = %e",i,gamma[i]);
+    gammas << buffer;
+  }
+  gammas << "\n\n#end of file";
+  gammas.close();
+
+
+  // print calculated values for comparative matters
+
+  for (int i=1;i<g_cnt;i++) {
+    sprintf(buffer,"v[%d]",i);
+      printf("\n\n");
+    v[i]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,buffer);
+    sprintf(buffer,"w[%d]",i-1);
+    w[i-1]->Scal(1/(h[i+(i-1)*n_max]));
+      printf("\n\n");
+    w[i-1]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,buffer);
+  }
+
 
   return x;
 }
@@ -2294,84 +3072,188 @@ SmartPtr<ShiftVector> LinearizeKKT::computeV(SmartPtr<ShiftVector> r) const
 {
   SmartPtr<ShiftVector> retval = new ShiftVector(*r);
 
-  // r->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"v_rrrrr");
-  // retval->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"v_retval");
+
   const Number rr = r->Nrm2();
   assert(rr);
   retval->Scal(1/rr);
+
   return retval;
 }
 
 SmartPtr<ShiftVector> LinearizeKKT::computeAMultVector(SmartPtr<ShiftVector> target) const
 {
-  // init retval parts
-  SmartPtr<DenseVector> retval_x = target->x()->MakeNewDenseVector();
-  SmartPtr<DenseVector> retval_u = shrink(dynamic_cast<DenseVector*>(target->top()->x()->MakeNewCopy()),u_indices_);
-  SmartPtr<DenseVector> retval_y_c = target->y_c()->MakeNewDenseVector();
-  SmartPtr<DenseVector> retval_y_d = target->y_d()->MakeNewDenseVector();
 
+  // init retval parts
+  SmartPtr<const DenseVectorSpace> x_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(target->x()->OwnerSpace()));
+  SmartPtr<DenseVector> retval_x = x_space->MakeNewDenseVector();
+  SmartPtr<DenseVectorSpace> u_space = new DenseVectorSpace(u_indices_.size());
+  SmartPtr<DenseVector> retval_u = u_space->MakeNewDenseVector();
+  SmartPtr<const DenseVectorSpace> y_c_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(target->y_c()->OwnerSpace()));
+  SmartPtr<DenseVector> retval_y_c = y_c_space->MakeNewDenseVector();
+  SmartPtr<const DenseVectorSpace> y_d_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(target->y_d()->OwnerSpace()));
+  SmartPtr<DenseVector> retval_y_d = y_d_space->MakeNewDenseVector();
+
+  //  printf("\nWWWWWWWWWWWWWWWWWWWPAAAAAAAAAAAAAAAAAAAAAARTTTTTTTTTTT\n");
   // get (W_i,shift times rhs_i) with i= (shift_h, u)
   SmartPtr<DenseVector> tmp_rhs = expand(target->x(),shift_x_indices_,W_->NCols());
-  SmartPtr<DenseVector> extractor = tmp_rhs->MakeNewDenseVector();
+  // printf("\n");
+  // tmp_rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs?");
+  // printf("\n\n");
+  // for (int i=0;i<_x_intervalIDs.size();i++)
+  //   printf("\n  -x-%d--  ",_x_intervalIDs[i]);
+  SmartPtr<DenseVectorSpace> extractor_space = new DenseVectorSpace(W_->NRows());
+  SmartPtr<DenseVector> extractor = extractor_space->MakeNewDenseVector();
   W_->MultVector(1.0,*tmp_rhs,0.0,*extractor);
   // map results back to get u and shift part seperately for the appropriate parts of S
+  // extractor->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs + us?");
+  // printf("\n\n");
   SmartPtr<DenseVector> extr_u_part = shrink(extractor,u_indices_);
   retval_u->AddOneVector(1.0,*extr_u_part,0.0);
+  // extr_u_part->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"us?");
+  // printf("\n\n");
+  // retval_u->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"us?");
+  // printf("\n\n");
   SmartPtr<DenseVector> extr_shift_part = shrink(extractor,shift_x_indices_);
   retval_x->AddOneVector(1.0,*extr_shift_part,0.0);
+  // extr_shift_part->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs?");
+  // printf("\n\n");
+  // retval_x->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs? rpx");
+  // printf("\n\n");
+  // extractor->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs + us?");
+  // printf("\n\n");
 
+
+
+  //  printf("\nAAAAAAAAATTTTTTTTTTTPAAAAAAAAAAAAAAAAAAAAAARTTTTTTTTTTT\n");
   //get (A_shift^T times rhs_i) parts with i= (u, shift_c)
   tmp_rhs = expand(target->y_c(),shift_c_indices_,A_->NRows());
-  SmartPtr<DenseVectorSpace> extractor_space = new DenseVectorSpace(A_->NCols());
+  // tmp_rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift cs?");
+  // printf("\n\n");
+  // for (int i=0;i<_c_intervalIDs.size();i++)
+  //   printf("\n  -c-%d--  ",_c_intervalIDs[i]);
+  extractor_space = new DenseVectorSpace(A_->NCols());
   extractor = extractor_space->MakeNewDenseVector();
   A_->TransMultVector(1.0,*tmp_rhs,0.0,*extractor);
   //map results back to get u and shift part seperately for the appropriate parts of S
+  // extractor->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs + us?");
+  // printf("\n\n");
   extr_u_part = shrink(extractor,u_indices_);
   retval_u->AddOneVector(1.0,*extr_u_part,1.0);
+  // extr_u_part->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"us?");
+  // printf("\n\n");
+  // retval_u->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"us? rptop");
+  // printf("\n\n");
   extr_shift_part = shrink(extractor,shift_x_indices_);
   retval_x->AddOneVector(1.0,*extr_shift_part,1.0);
+  // extr_shift_part->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs?");
+  // printf("\n\n");
+  // retval_x->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs? rpx");
+  // printf("\n\n");
+  // extractor->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs + us?");
+  // printf("\n\n");
 
+  //  printf("\nBBBBBBBBBBTTTTTTTTTTTPAAAAAAAAAAAAAAAAAAAAAARTTTTTTTTTTT\n");
   //get (B_shift^T times rhs_i) parts with i= (u, shift_d)
   tmp_rhs = expand(target->y_d(),shift_d_indices_,B_->NRows());
+  // tmp_rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift ds?");
+  // printf("\n\n");
+  // for (int i=0;i<_d_intervalIDs.size();i++)
+  //   printf("\n  -d-%d--  ",_d_intervalIDs[i]);
   extractor_space = new DenseVectorSpace(B_->NCols());
   extractor = extractor_space->MakeNewDenseVector();
   B_->TransMultVector(1.0,*tmp_rhs,0.0,*extractor);
   //map result back to get u and shift part seperately for the appropriate parts of S
+  // extractor->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs + us?");
+  // printf("\n\n");
   extr_u_part = shrink(extractor,u_indices_);
   retval_u->AddOneVector(1.0,*extr_u_part,1.0);
+  // extr_u_part->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"us?");
+  // printf("\n\n");
+  // retval_u->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"us? rptop");
+  // printf("\n\n");
   extr_shift_part = shrink(extractor,shift_x_indices_);
   retval_x->AddOneVector(1.0,*extr_shift_part,1.0);
+  // extr_shift_part->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs?");
+  // printf("\n\n");
+  // retval_x->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs? rpx");
+  // printf("\n\n");
+  // extractor->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs + us?");
+  // printf("\n\n");
 
+  //  printf("\nAAAAAAAAAAAAAAAAAAAAAPAAAAAAAAAAAAAAAAAAAAAARTTTTTTTTTTT\n");
   //get (A_shift times rhs_shift_c) part
   tmp_rhs = expand(target->x(),shift_x_indices_,A_->NCols());
+  // tmp_rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs?");
+  // printf("\n\n");
+  // for (int i=0;i<_x_intervalIDs.size();i++)
+  //   printf("\n  -x-%d--  ",_x_intervalIDs[i]);
   extractor = tmp_rhs->MakeNewDenseVector();
   A_->MultVector(1.0,*tmp_rhs,0.0,*extractor);
   //map result back to the appropriate parts of S
+  // extractor->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift cs?");
+  // printf("\n\n");
   retval_y_c = shrink(extractor,shift_c_indices_);
 
+  //  printf("\nBBBBBBBBBBBBBBBBBBBBBPAAAAAAAAAAAAAAAAAAAAAARTTTTTTTTTTT\n");
   //get (B_shift times rhs_shift_d) part
   tmp_rhs = expand(target->x(),shift_x_indices_,B_->NCols());
+  // tmp_rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift xs?");
+  // printf("\n\n");
+  // for (int i=0;i<_x_intervalIDs.size();i++)
+  //   printf("\n  -x-%d--  ",_x_intervalIDs[i]);
   extractor = tmp_rhs->MakeNewDenseVector();
   B_->MultVector(1.0,*tmp_rhs,0.0,*extractor);
   //map result back to the appropriate parts of S
+  // extractor->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift ds?");
+  // printf("\n\n");
   retval_y_d = shrink(extractor,shift_d_indices_);
 
-  // copy top values over from target, at the same time add D-multiplication to shifted part
+  // retval_y_c->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift cs? rpc");
+  // retval_y_d->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"shift ds? rpd");
+
+  // get D part
   SmartPtr<ShiftVector> retval = computeDMultYrhs(target);
 
   // map and insert u part back into top part
-  SmartPtr<DenseVector> top_x = dynamic_cast<DenseVector*>(target->top()->x()->MakeNewCopy());
+  SmartPtr<const DenseVectorSpace> t_x_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(target->top()->x()->OwnerSpace()));
+  SmartPtr<DenseVector> top_x = t_x_space->MakeNewDenseVector();
   SmartPtr<DenseVector> top_u = expand(retval_u,u_indices_,top_x->Dim());
-  top_x->AddOneVector(1.0,*top_u,1.0);
+  top_x->AddOneVector(1.0,*top_u,0.0);
   SmartPtr<IteratesVector> retval_top = target->top()->MakeNewIteratesVector();
   retval_top->Set(0.0);
   retval_top->Set_x_NonConst(*top_x);
-  retval_top->Set_y_c(*target->top()->y_c());
-  retval_top->Set_y_d(*target->top()->y_d());
 
   // insert calculated parts into retval
   SmartPtr<ShiftVector> retpart = new ShiftVector(retval_top,retval_x,retval_y_c,retval_y_d);
-  retval->AddOneVector(1.0,*retpart,1.0);
+  // retpart->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rppre");
+  // printf("\n\n");
+
+  // copy neccessary parts of target
+  retval_top = target->top();
+  retval_x->Set(0);
+  retval_y_c->Set(0);
+  retval_y_d->Set(0);
+  SmartPtr<ShiftVector> retarget = new ShiftVector(retval_top,retval_x,retval_y_c,retval_y_d);
+
+  // retpart->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rppost");
+  // printf("\n\n");
+
+  /*
+  printf("\n");
+  retval->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"Aretval");
+  printf("\n\n");
+  retpart->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"retpart");
+  printf("\n\n");
+  retarget->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"retarget");
+  printf("\n\n");
+  */
+
+
+  retval->AddTwoVectors(1.0,*retpart,1.0,*retarget,1.0);
+
+  // retval->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"retvalA");
+  // printf("\n\n");
+
 
   return retval;
 }
@@ -2379,13 +3261,21 @@ SmartPtr<ShiftVector> LinearizeKKT::computeAMultVector(SmartPtr<ShiftVector> tar
 SmartPtr<ShiftVector> LinearizeKKT::computeDMultYrhs(SmartPtr<ShiftVector> target) const
 {
   // do actual backsolve
-  SmartPtr<IteratesVector> preretval = target->top()->MakeNewIteratesVector();
+  SmartPtr<const IteratesVectorSpace> pr_space = dynamic_cast<const IteratesVectorSpace*>(GetRawPtr(target->top()->OwnerSpace()));
+  SmartPtr<IteratesVector> preretval = pr_space->MakeNewIteratesVector();
   KKT_->Solve(1.0, 0.0, *target->top(), *preretval);
 
   // get (K^-1 times rhs) u part and eliminate non-u part elements
   SmartPtr<DenseVector> retval_x = dynamic_cast<DenseVector*>(preretval->x()->MakeNewCopy());
-  retval_x = shrink(retval_x,u_indices_);
-  retval_x = expand(retval_x,u_indices_,W_->NCols());
+  SmartPtr<DenseVector> retval_u = shrink(retval_x,u_indices_);
+  retval_x = expand(retval_u,u_indices_,W_->NCols());
+  // Printf("\N");
+  // Retval_X->Print(*Jnl_, J_INSUPPRESSIBLE, J_DBG,"Only Us?");
+  // Printf("\N\N");
+  // Preretval->Print(*Jnl_, J_INSUPPRESSIBLE, J_DBG,"Us N More");
+  // for (int i=0;i<x_intervalIDs_.size();i++)
+  //   printf("\n  --%d--  ",x_intervalIDs_[i]);
+
   SmartPtr<DenseVector> retval_c;  // = preretval->y_c();
   SmartPtr<DenseVector> retval_d;  // = preretval->y_d();
 
@@ -2401,13 +3291,22 @@ SmartPtr<ShiftVector> LinearizeKKT::computeDMultYrhs(SmartPtr<ShiftVector> targe
   B_->MultVector(1.0,*retval_x,0.0,*retval_d_nonconst);
 
   // reduce to the desired quantities
-  retval_x = shrink(retval_x_nonconst,shift_x_indices_);
+  retval_u = shrink(retval_x_nonconst,shift_x_indices_);
+  // retval_u->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"Dretval_x");
+  // printf("\n\n");
   retval_c = shrink(retval_c_nonconst,shift_c_indices_);
+  // retval_c->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"Dretval_c");
+  // printf("\n\n");
   retval_d = shrink(retval_d_nonconst,shift_d_indices_);
-
+  // retval_d->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"Dretval_d");
+  // printf("\n\n");
   //setup return value
-  SmartPtr<ShiftVector> retval = new ShiftVector(target->top()->MakeNewIteratesVectorCopy(),retval_x,retval_c,retval_d);
+  SmartPtr<IteratesVector> top = target->top()->MakeNewIteratesVector();
+  top->Set(0.0);
+  SmartPtr<ShiftVector> retval = new ShiftVector(top,retval_u,retval_c,retval_d);
 
+  // retval->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"Dretval");
+  // printf("\n\n");
   return retval;
 }
 
@@ -2428,7 +3327,6 @@ SmartPtr<ShiftVector> LinearizeKKT::undoConditionning(SmartPtr<ShiftVector> targ
 
   // set up retval
   SmartPtr<ShiftVector> retval = new ShiftVector(retval_top,target->x(),target->y_c(),target->y_d());
-
 
   return retval;
 }
@@ -2658,6 +3556,3 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
 
   return 1;
 }
-
-
-
