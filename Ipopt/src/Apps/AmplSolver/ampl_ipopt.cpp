@@ -273,6 +273,9 @@ public:
   SmartPtr<ShiftVector> computeDMultYrhs(SmartPtr<ShiftVector> target) const;
   SmartPtr<ShiftVector> undoConditionning(SmartPtr<ShiftVector> target) const;
   SmartPtr<const DenseVector> computeDeltaP(const IntervalInfoSet& intervals,const Index& interval, const Index& parameterID) const;
+  SmartPtr<DenseVector> applyMINRESOnInterval(SmartPtr<IpoptApplication> app,const Index& interval, const Index& parameter);
+  SmartPtr<ShiftVector> computeMINRES(SmartPtr<ShiftVector>b,SmartPtr<ShiftVector>x0,const Number& tol =1.0e-6, const Index& n_max=5, const Index& n_rest=0);
+  void testGMRES();
 
 private:
   //original Ipopt data
@@ -2100,45 +2103,9 @@ SmartPtr<const DenseVector>  y_d_ = dynamic_cast<const DenseVector*>(GetRawPtr(a
 /* apply GMRES-approximation of a split to all intervals and decide for the smartest split*/
 SplitDecision LinearizeKKT::applySplitAlgorithm(SmartPtr<IpoptApplication> app)
 {
-SmartPtr<const DenseVector> x = dynamic_cast<const DenseVector*>(GetRawPtr(app->IpoptDataObject()->curr()->x()));
-
-SmartPtr<const DenseVectorSpace> x_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(x->OwnerSpace()));
-
- assert(x_space->HasStringMetaData("idx_names"));
- const std::vector<std::basic_string<char> > names = x_space->GetStringMetaData("idx_names");
-
- const Index x_dim = x->Dim();
-
- std::vector<std::string> bound_values;
- std::vector<Index> indices;
-
- for (Index i=0;i<x_dim;i++) {
-   printf("\nname[%d]: %s comparision value: %d",i,names[i].c_str(),names[i].compare("xCU["));
-   if (names[i].compare("xCU[")>0) {
-     bound_values.push_back(names[i].substr(names[i].find("xCU[")+4));
-     indices.push_back(i);
-   }
- }
-
- for (int i=0;i<bound_values.size();i++) {
-   printf("\n%s",bound_values[i].c_str());
-   bound_values[i] = bound_values[i].erase(bound_values[i].find("]"));
-   printf(" turns into %s",bound_values[i].c_str());
- }
-
- assert(!x->IsHomogeneous());
- assert(indices.size());
- const Number* values = x->Values();
- // boundary value is HARD coded -- 0.2
- Number reference = fabs(values[indices->at(0)]-0.2);
-
-
-
-
+ testGMRES();
  SmartPtr<OptionsList> options = app->Options();
  SplitDecision retval;
- retval.parameterID = 1;
- retval.intervalID = 1;
 
   // provde MetaData for sens_vspace (needed by branchSensitivityMatrix())
   std::vector<Index> int_IDs(rhs_dim_);
@@ -2179,25 +2146,24 @@ SmartPtr<const DenseVectorSpace> x_space = dynamic_cast<const DenseVectorSpace*>
     // get GMRES approximated split results wrt each single interval
     // i+1: in case intervalIDs start with 1 (which they do)
     if (intervals_.isUpper(i)) {
-      sens_vec = applyAlgorithmOnInterval(app,intervals_.getIntervalID(i),intervals_.getParameterID(i));
-      printf("\n\n");
-      sens_vec->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"sense_vec");
+      //   sens_vec = applyAlgorithmOnInterval(app,intervals_.getIntervalID(i),intervals_.getParameterID(i));
+      sens_vec = applyMINRESOnInterval(app,intervals_.getIntervalID(i),intervals_.getParameterID(i));
+      // printf("\n\n");
+      // sens_vec->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"sense_vec");
     } else
       sens_vec->Set(0);
 
     mv_sens->SetVector(i,*sens_vec);
     sens_vec = sens_vspace->MakeNewDenseVector();
   }
-  printf("\n\n");
-  mv_sens->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"mv_sens");
+  // printf("\n\n");
+  // mv_sens->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"mv_sens");
 
   // chose the split with best results
   BranchingCriterion* branchmode = assignBranchingMethod(options);
   std::vector<SplitChoice> splitchoices = branchmode->branchSensitivityMatrix(mv_sens,options,intervals_,true);
   ControlSelector* pickfirst = assignControlMethod(options);
   retval = pickfirst->decideSplitControl(splitchoices);
-
-  printf("\nproposed for split(gmrs): intervalID: %d parameter: %d\n",retval.intervalID,retval.parameterID);
 
   ///////////////////////only for the sake of a working python/ampl interface////
   ////////manually performing a ctrlwise branch after LinKKT/////////////////////
@@ -3402,6 +3368,7 @@ SmartPtr<Vector> getDirectionalDerivative(SmartPtr<IpoptApplication> app, SmartP
 
 bool doIntervalization(SmartPtr<IpoptApplication> app)
 {
+
   SmartPtr<Matrix> sens_matrix = getSensitivityMatrix(app);
   SmartPtr<MultiVectorMatrix> mv_sens = dynamic_cast<MultiVectorMatrix*>(GetRawPtr(sens_matrix));
   SmartPtr<IpoptNLP> ipopt_nlp = app->IpoptNLPObject();
@@ -3414,10 +3381,15 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   SplitAlgorithm* splitter = new LinearizeKKT(app);
   SplitDecision resulting_split = splitter->applySplitAlgorithm(app);
 
-  SmartPtr<const Vector> x = app->IpoptDataObject()->curr()->x();
+    /*
+    SplitAlgorithm* splatter = new SplitIntAtBound();
+    SplitDecision resulting_split = splatter->applySplitAlgorithm(app);
+   */
+
+
+
 
   printf("\nproposed for split: intervalID: %d parameter: %d\n",resulting_split.intervalID,resulting_split.parameterID);
-
   //write gathered information into .dat file to access with python
   std::string fname = "branch_intervals.dat";
   std::ofstream branch_intervals;
@@ -3436,18 +3408,509 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
 
 SplitDecision SplitIntAtBound::applySplitAlgorithm(SmartPtr<IpoptApplication> app)
 {
-SmartPtr<const DenseVector> x = dynamic_cast<const DenseVector*>(GetRawPtr(app->IpoptDataObject()->curr()->x()));
+  SmartPtr<const DenseVector> x = dynamic_cast<const DenseVector*>(GetRawPtr(app->IpoptDataObject()->curr()->x()));
 
-SmartPtr<const DenseVectorSpace> x_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(x->OwnerSpace()));
+  SmartPtr<const DenseVectorSpace> x_space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(x->OwnerSpace()));
 
- assert(x_space->HasStringMetaData("idx_names"));
- const std::vector<std::basic_string<char> > names = x_space->GetStringMetaData("idx_names");
+  assert(x_space->HasStringMetaData("idx_names"));
+  const std::vector<std::basic_string<char> > names = x_space->GetStringMetaData("idx_names");
 
- const Index x_dim = x->Dim();
+  const Index x_dim = x->Dim();
 
- for (Index i=0;i<x_dim;i++)
-   printf("\nname[%d]: %s",i,names[i].c_str());
+  std::vector<std::string> bound_values;
+  std::vector<Index> indices;
 
-   //   if (*(names+i).c_str() == )
+  for (Index i=0;i<x_dim;i++) {
+    printf("\nname[%d]: %s comparision value: %d",i,names[i].c_str(),names[i].compare("xCU["));
+    if (names[i].compare("xCU[")>0) {
+      bound_values.push_back(names[i].substr(names[i].find("xCU[")+4));
+      indices.push_back(i);
+    }
+  }
 
+  assert(!x->IsHomogeneous());
+  assert(indices.size());
+  assert(x_space->HasIntegerMetaData("intervalID"));
+  std::vector<Index> intervalIDs = x_space->GetIntegerMetaData("intervalID");
+
+  SplitDecision retval;
+  retval.parameterID = 1;
+  const Number* values = x->Values();
+  // boundary value is HARD coded -- 0.2
+  Number reference = fabs(values[indices.at(0)]-0.2);
+  retval.intervalID = intervalIDs[indices.at(0)];
+
+  for (int i=0;i<bound_values.size();i++) {
+    printf("\n%s",bound_values[i].c_str());
+    bound_values[i] = bound_values[i].erase(bound_values[i].find("]"));
+    printf(" turns into %s",bound_values[i].c_str());
+    if (fabs(values[indices.at(i)]-0.2) < reference)
+      retval.intervalID = intervalIDs[indices.at(i)];
+  }
+
+  return retval;
+}
+
+SmartPtr<DenseVector> LinearizeKKT::applyMINRESOnInterval(SmartPtr<IpoptApplication> app,const Index& interval, const Index& parameter)
+{
+  // initialize neccessary quantities
+  const Index n_parameters = intervals_.getParameterCount();
+  std::vector<Index> intervalIDs = intervals_.getIntervalIDVec();
+  SmartPtr<DenseVectorSpace> z_space = new DenseVectorSpace(rhs_dim_);
+  SmartPtr<DenseVector> z_postsplit = z_space->MakeNewDenseVector();
+  SmartPtr<const DenseVector> deltap;
+
+  SmartPtr<DenseVectorSpace> res_vspace = new DenseVectorSpace(rhs_dim_);
+  SmartPtr<DenseVector> res_vsense = res_vspace->MakeNewDenseVector();
+
+  SmartPtr<const IteratesVectorSpace> top_space;
+  SmartPtr<IteratesVector> rhs_top;
+  SmartPtr<DenseVector> rhs_x,rhs_y_c,rhs_y_d;
+  SmartPtr<ShiftVector> rhs;
+  SmartPtr<ShiftVector> z_cond;
+  SmartPtr<ShiftVector> lhs;
+  SmartPtr<ShiftVector> x0;
+  IntervalInfoSet smallset;
+  std::vector<IntervalInfo> int_info_vec;
+  Number tolo;
+  Index n_m,n_rst;
+
+  // init sensitivity matrix and -space
+  SmartPtr<MultiVectorMatrixSpace> sense_space = new MultiVectorMatrixSpace(n_parameters*2,*z_space);
+  SmartPtr<MultiVectorMatrix> sense = sense_space->MakeNewMultiVectorMatrix();
+  SmartPtr<MultiVectorMatrix> res_sense = sense_space->MakeNewMultiVectorMatrix();
+
+  // start algorithm on each existing intervalID
+  Index s_count = 0;
+  for (Index i=0;i<intervalIDs.size();i++) {
+    if (intervalIDs[i]==interval) {
+
+      // split interval indices into to be shifted interval entries and remainder
+      if (!splitIntervalIndices(x_intervalIDs_,shift_x_indices_,interval))
+	printf("\nLinearizeKKT::applyAlgorithmOnInterval(): ERROR: unable to split x_intervalIDs_");
+      if (!splitIntervalIndices(c_intervalIDs_,shift_c_indices_,interval))
+	printf("\nLinearizeKKT::applyAlgorithmOnInterval(): ERROR: unable to split c_intervalIDs_");
+      if (!splitIntervalIndices(d_intervalIDs_,shift_d_indices_,interval))
+	printf("\nLinearizeKKT::applyAlgorithmOnInterval(): ERROR: unable to split d_intervalIDs_");
+
+      // get different rhs entries for this column
+      x_i_ = extractColumn(Wp_,i);
+      y_c_i_ = extractColumn(Ap_,i);
+      y_d_i_ = extractColumn(Bp_,i);
+
+      // assign rhs subvectors
+      u_i_ = shrink(x_i_,u_indices_);
+
+      // create ShiftVector for rhs
+      top_space = dynamic_cast<const IteratesVectorSpace*>(GetRawPtr(app->IpoptDataObject()->curr()->OwnerSpace()));
+      rhs_top = top_space->MakeNewIteratesVector();
+      rhs_top->Set(0.0);
+      rhs_top->Set_x_NonConst(*x_i_);
+      rhs_top->Set_y_c_NonConst(*y_c_i_);
+      rhs_top->Set_y_d_NonConst(*y_d_i_);
+
+      SmartPtr<DenseVectorSpace> x_sp = new DenseVectorSpace(shift_x_indices_.size());
+      rhs_x = x_sp->MakeNewDenseVector();
+      rhs_x = shrink(x_i_,shift_x_indices_);
+      SmartPtr<DenseVectorSpace> y_c_sp = new DenseVectorSpace(shift_c_indices_.size());
+      rhs_y_c = y_c_sp->MakeNewDenseVector();
+      rhs_y_c = shrink(y_c_i_,shift_c_indices_);
+      SmartPtr<DenseVectorSpace> y_d_sp = new DenseVectorSpace(shift_d_indices_.size());
+      rhs_y_d = y_d_sp->MakeNewDenseVector();
+      rhs_y_d = shrink(y_d_i_,shift_d_indices_);
+
+      rhs = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
+
+      // create x0
+      x0 = new ShiftVector(*rhs);
+      x0->Set(0.0);
+
+      // compute solution of the GMRES-Step
+      assignGMRESOptions(app->Options(),tolo,n_m,n_rst);
+      z_cond = computeMINRES(rhs,x0,tolo,n_m);
+
+      // undo conditionning step to get the approximation of the postsplit sensitivity column
+      lhs = undoConditionning(z_cond);
+      z_postsplit = lhs->getDVector();
+
+      // add the resulting sense vector to matrix ....
+      sense->SetVector(s_count,*z_postsplit);
+      s_count++;
+    }
+
+    // create small IntervalInfo for this sensitivity entry
+    IntervalInfo int_info = IntervalInfo(intervals_.getValue(i),intervals_.getParameterID(i),intervals_.getIntervalID(i),i,intervals_.isUpper(i));
+  int_info_vec.push_back(int_info);
+  }
+
+  smallset = IntervalInfoSet(int_info_vec);
+  //  smallset.printSet();
+
+  // get the parameter perturbation for this split
+  deltap = computeDeltaP(intervals_,interval,parameter);
+  // printf("\n");
+  // deltap->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"delta p");
+
+  // calculate absolute sensitivity values
+  sense->MultVector(1.0,*deltap,0.0,*res_vsense);
+
+  return res_vsense;
+}
+
+SmartPtr<ShiftVector> LinearizeKKT::computeMINRES(SmartPtr<ShiftVector>b,SmartPtr<ShiftVector>x0,const Number& tol, const Index& n_max, const Index& n_rest)
+{
+  std::vector<SmartPtr<ShiftVector> > r(n_max);
+  std::vector<SmartPtr<ShiftVector> > s(n_max);
+  std::vector<SmartPtr<ShiftVector> > p(n_max);
+  std::vector<Number> alpha(n_max);
+  std::vector<Number> beta(2*n_max+2);
+  std::vector<SmartPtr<ShiftVector> > x(n_max);
+  Index j_thresh = 1;
+  SmartPtr<ShiftVector> retval;
+
+  x[0] = new ShiftVector(*x0);
+
+  r[0] = computeR(b,x0);
+  p[0] = new ShiftVector(*r[0]);
+  s[0] = computeAMultVector(p[0]);
+
+  for (int i=1;i<n_max;i++) {
+    // calculate steplength
+    alpha[i-1] = r[i-1]->Dot(*s[i-1])/s[i-1]->Dot(*s[i-1]);
+
+    // update solution
+    x[i] = new ShiftVector(*p[i-1]);
+    x[i]->AddOneVector(1.0,*x[i-1],alpha[i-1]);
+
+    //update residual
+    r[i] = new ShiftVector(*r[i-1]);
+    r[i]->AddOneVector(-1.0*alpha[i-1],*s[i-1],1.0);
+
+    if (r[i]->Nrm2()<tol) {
+      retval = new ShiftVector(*x[i]);
+
+      std::string fname = "minres.dat";
+      std::ofstream minres;
+      char buffer[63];
+      minres.open(fname.c_str());
+      minres << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
+      for (int k=0;k<i;k++) {
+	sprintf(buffer,"\nNrm2(r)[%d] = %e",k,r[k]->Nrm2());
+	minres << buffer;
+	SmartPtr<ShiftVector> tmp = computeAMultVector(x[k]);
+	tmp->AddOneVector(-1.0,*b,1.0);
+	sprintf(buffer,"\nNrm2(Ax[%d]-b) = %e",k,tmp->Nrm2());
+	minres << buffer;
+      }
+      minres << "\n\n#end of file";
+      minres.close();
+
+      return retval;
+
+    } else {
+      // update stepdirection
+      p[i] = s[i-1];
+
+      // update s
+      s[i] = computeAMultVector(s[i-1]);
+
+      if (i>=2)
+	j_thresh=2;
+
+      // modify updated  p and s
+      for (int j=0;j<j_thresh;j++) {
+	beta[2*i+j] = s[i]->Dot(*s[i-j-1])/s[i-j-1]->Dot(*s[i-j-1]);
+	p[i]->AddOneVector(-1.0*beta[2*i+j],*p[i-j-1],1.0);
+	s[i]->AddOneVector(-1.0*beta[2*i+j],*s[i-j-1],1.0);
+      }
+    }
+  }
+
+  return x[n_max-1];
+}
+
+void LinearizeKKT::testGMRES()
+{
+  // initialize neccessary vars
+  SmartPtr<DenseVectorSpace> space = new DenseVectorSpace(80);
+  SmartPtr<DenseVector> b = space->MakeNewDenseVector();
+  SmartPtr<MultiVectorMatrixSpace> m_space = new MultiVectorMatrixSpace(80,*space);
+  SmartPtr<MultiVectorMatrix> A = m_space->MakeNewMultiVectorMatrix();
+
+  // setup A
+  Index abs_pos = 0;
+  Number* vals = new Number[80];
+  for (int i=0;i<10;i++) {
+    SmartPtr<DenseVector> moo = space->MakeNewDenseVector();
+    for (int j=0;j<80;j++) {
+      vals[j] = j+i*i;
+    }
+    moo->SetValues(vals);
+    A->SetVector(abs_pos,*moo);
+    abs_pos++;
+  }
+  for (int i=0;i<10;i++) {
+    SmartPtr<DenseVector> moo = space->MakeNewDenseVector();
+    for (int j=0;j<80;j++) {
+      vals[j] = j*i+i;
+    }
+    moo->SetValues(vals);
+    A->SetVector(abs_pos,*moo);
+    abs_pos++;
+  }
+  for (int i=0;i<10;i++) {
+    SmartPtr<DenseVector> moo = space->MakeNewDenseVector();
+    for (int j=0;j<40;j++) {
+      vals[2*j] = j;
+      vals[2*j+1] = 0;
+    }
+    moo->SetValues(vals);
+    A->SetVector(abs_pos,*moo);
+    abs_pos++;
+  }  for (int i=0;i<10;i++) {
+    SmartPtr<DenseVector> moo = space->MakeNewDenseVector();
+    for (int j=0;j<40;j++) {
+      vals[2*j] = 0 ;
+      vals[2*j+1] = j;
+    }
+    moo->SetValues(vals);
+    A->SetVector(abs_pos,*moo);
+    abs_pos++;
+  }  for (int i=0;i<10;i++) {
+    SmartPtr<DenseVector> moo = space->MakeNewDenseVector();
+    for (int j=0;j<40;j++) {
+      vals[2*j] = 1;
+      vals[2*j+1] = 0;
+    }
+    moo->SetValues(vals);
+    A->SetVector(abs_pos,*moo);
+    abs_pos++;
+  }  for (int i=0;i<10;i++) {
+    SmartPtr<DenseVector> moo = space->MakeNewDenseVector();
+    for (int j=0;j<40;j++) {
+      vals[2*j] = 0;
+      vals[2*j+1] = -2;
+    }
+    moo->SetValues(vals);
+    A->SetVector(abs_pos,*moo);
+    abs_pos++;
+  }  for (int i=0;i<10;i++) {
+    SmartPtr<DenseVector> moo = space->MakeNewDenseVector();
+    for (int j=0;j<80;j++) {
+      if (j<40)
+	vals[j] = 1;
+      else
+	vals[j] = 0;
+    }
+    moo->SetValues(vals);
+    A->SetVector(abs_pos,*moo);
+    abs_pos++;
+  }  for (int i=0;i<10;i++) {
+    SmartPtr<DenseVector> moo = space->MakeNewDenseVector();
+    for (int j=0;j<80;j++) {
+      if (j<40)
+	vals[j] = 0;
+      else
+	vals[j] = 1;
+    }
+    moo->SetValues(vals);
+    A->SetVector(abs_pos,*moo);
+    abs_pos++;
+  }
+
+  for (int j=0;j<80;j++) {
+        vals[j] = 80-j;
+  }
+
+  b->SetValues(vals);
+
+  A->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"testgmres: A");
+  Index n_max = 30;
+  SmartPtr<DenseVector> r = b;
+  SmartPtr<DenseVector> x0 = space->MakeNewDenseVector();
+  x0->Set(0);
+  SmartPtr<DenseVector> x = x0;
+
+  std::vector<SmartPtr<DenseVector> > v(n_max+1);
+  std::vector<SmartPtr<DenseVector> > w(n_max+1);
+
+  Number beta;
+  Index g_cnt = 0;
+  std::vector<Number> h((n_max+1)*(n_max+1));
+  std::vector<Number> s(n_max+1);
+  std::vector<Number> c(n_max+1);
+  std::vector<Number> gamma(n_max+1);
+  std::vector<Number> y(n_max);
+
+
+  SmartPtr<DenseVector> tmp;
+
+  // for residual output
+  std::string fname = "tresiduals.dat";
+  std::ofstream residuals;
+  residuals.open(fname.c_str());
+  char buffer[63];
+  residuals << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
+
+  // preloop inital var values
+  //  printf("\nnorm of r is %f",r->Nrm2());
+  v[0] = dynamic_cast<DenseVector*>(r->MakeNewCopy());
+  gamma[0] = r->Nrm2();
+  assert(gamma[0]);
+  v[0]->Scal(1/gamma[0]);
+  //  printf("\ngamma[0] is %f",r->Nrm2());
+  //  printf("\ncomputeGMRES(): v[0] assigned. gamma[0] assigned.");
+
+  // outer loop
+  for (Index j=0; j<n_max;j++) {
+  //  printf("\ncomputeGMRES(): outer loop iteration started. j = %d",j);
+
+    //w[j] = computeAMultVector(v[j]);
+    w[j] = space->MakeNewDenseVector();
+    A->MultVector(1.0,*v[j],0.0,*w[j]);
+
+    // update h[i,j] entries
+    for (Index i=0; i<=j;i++) {
+//      printf("\ncomputeGMRES(): accessing v[%d] and v[%d].",j,i);
+      h[i+j*n_max] = v[i]->Dot(*w[j]);
+//      printf("\ncomputeGMRES(): h[%d] assigned.",i+j*n_max);
+    }
+
+    // calculate w[j]
+//    printf("\ncomputeGMRES(): accessing v[%d].",j);
+
+    for (Index i=0;i<=j;i++) {
+//      printf("\ncomputeGMRES(): accessing v[%d], h[%d].",i,i+j*n_max);
+      w[j]->AddOneVector(-1.0*h[i+j*n_max],*v[i],1.0);
+    }
+//    printf("\ncomputeGMRES(): w[%d] assigned.",j);
+
+    // expand h, first step
+//    printf("\ncomputeGMRES(): accessing w[%d].",j);
+    h[j+1+j*n_max] = w[j]->Nrm2();
+
+    /*CHECKED TILL HERE: SEEMS TO BE 1:1 EXACT.*/
+
+//    printf("\ncomputeGMRES(): h[%d] assigned.",j+1+j*n_max);
+
+    /////////////////////////////////////////////////
+    /////gangnam eigenvector stuff??    //////////
+    /////////////////////////////////////////////////
+
+    // expand h, second step - eigenvector style
+//    printf("\ncomputeGMRES(): accessing h[%d] and h[%d].",j+j*n_max,j+1+j*n_max);
+    beta = sqrt(h[j+j*n_max]*h[j+j*n_max]+h[j+1+j*n_max]*h[j+1+j*n_max]);
+//    printf("\ncomputeGMRES(): beta assigned.");
+
+//    printf("\ncomputeGMRES(): accessing h[%d].",j+1+j*n_max);
+    s[j+1] = h[j+1+j*n_max]/beta;
+//    printf("\ncomputeGMRES(): s[%d] assigned.",j+1);
+
+//    printf("\ncomputeGMRES(): accessing h[%d].",j+j*n_max);
+    c[j+1] = h[j+j*n_max]/beta;
+//    printf("\ncomputeGMRES(): c[%d] assigned.",j+1);
+
+    h[j+j*n_max] = beta;
+//    printf("\ncomputeGMRES(): h[%d] reassigned.",j+j*n_max);
+
+    // expand and update gammas
+//    printf("\ncomputeGMRES(): accessing s[%d], c[%d] and gamma[%d].",j+1,j+1,j);
+//    printf("\ncomputeGMRES(): gamma[%d] = -s[%d]*gamma[%d]",j+1,j+1,j);
+    gamma[j+1] = -s[j+1]*gamma[j];
+//    printf("\ncomputeGMRES(): gamma[%d] = %e, gamma[%d] = %e.",j+1,gamma[j+1],j,gamma[j]);
+    gamma[j] = c[j+1]*gamma[j];
+    g_cnt++;
+//    printf("\ncomputeGMRES(): gamma[%d] and gamma[%d] assigned.",j+1,j);
+
+    // check quality of current solution
+//    printf("\ncomputeGMRES(): gamma[%d] = %e, tol = %e",j+1,gamma[j+1],tol);
+//    if ( ( (fabs(gamma[j+1]) > tol) && (!n_max) ) || (fabs(gamma[j+1]) > tol) && n_max && (j!=n_max-1))   {
+
+      // insufficient - update v[j+1]
+//      printf("\ncomputeGMRES(): accessing w[%d], h[%d] and gamma[%d].",j,j+1+j*n_max,j);
+    tmp = dynamic_cast<DenseVector*>(w[j]->MakeNewCopy());
+      assert(h[j+1+j*n_max]);
+      v[j+1] = dynamic_cast<DenseVector*>(w[j]->MakeNewCopy());
+      v[j+1]->Scal(1/h[j+1+j*n_max]);
+      // sprintf(buffer,"v[%d]",j+1);
+      // printf("\n\n");
+      // v[j+1]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,buffer);
+//      printf("\ncomputeGMRES(): v[%d] assigned.",j+1);
+
+      // target accuracy achieved - calculate solution
+/*    } else {
+      // set up multipliers y[i]
+      for (Index i=j;i>=0;i--) { // check this!
+//	printf("\ncomputeGMRES(): accessing h[%d] and gamma[%d].",i+i*n_max,i);
+	assert(h[i+i*n_max]);
+
+	// set up sum[k] h[i+k*n_max] y[k]
+	beta = 0;
+	for (Index k=i+1;k<=j;k++) {
+//	  printf("\ncomputeGMRES(): accessing h[%d] and y[%d].",i+k*n_max,k);
+	  beta += h[i+k*n_max]*y[k];
+	}
+	y[i]= (1/h[i+i*n_max])*(gamma[i]-beta);
+//	printf("\ncomputeGMRES(): y[%d] assigned.",i);
+      }
+
+      // compute solution
+      for (Index i=0; i<=j;i++) {
+//	printf("\ncomputeGMRES(): accessing y[%d] = %e and v[%d].",i,y[i],i);
+	x->AddTwoVectors(y[i],*v[i],0.0,*v[i],1.0);
+      }
+//      printf("\ncomputeGMRES(): x calculated.");
+      break;
+    }  */
+
+    /* set up current solution to calculate absolute residuum and write it to file
+       in order to check for convergence */
+      for (Index i=j;i>=0;i--) { // check this!
+      assert(h[i+i*n_max]);
+      beta = 0;
+      for (Index k=i+1;k<=j;k++) {
+	beta += h[i+k*n_max]*y[k];
+      }
+      y[i]= 1/h[i+i*n_max]*(gamma[i]-beta);
+    }
+    for (Index i=0; i<=j;i++) {
+      x->AddTwoVectors(y[i],*v[i],0.0,*v[i],1.0);
+    }
+    SmartPtr<DenseVector> fooo = space->MakeNewDenseVector();
+    A->MultVector(1.0,*x,0.0,*fooo);
+    fooo->AddOneVector(-1.0,*b,1.0);
+    Number residual = fooo->Nrm2();
+
+    //write residual into residuals.dat file for python access
+    sprintf(buffer,"\nresidual[%d] = %e",j,residual);
+    residuals << buffer;
+    x = dynamic_cast<DenseVector*>(x0->MakeNewCopy());
+  }
+  residuals << "\n\n#end of file";
+  residuals.close();
+
+  //write gamma[j] into gamma.dat file for python access
+  fname = "tgammas.dat";
+  std::ofstream gammas;
+  gammas.open(fname.c_str());
+  gammas << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
+  for (int i=0;i<g_cnt;i++) {
+    sprintf(buffer,"\ngamma[%d] = %e",i,gamma[i]);
+    gammas << buffer;
+  }
+  gammas << "\n\n#end of file";
+  gammas.close();
+
+  // print calculated values for comparative matters
+  /*
+  for (int i=1;i<g_cnt;i++) {
+    sprintf(buffer,"v[%d]",i);
+      printf("\n\n");
+    v[i]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,buffer);
+    sprintf(buffer,"w[%d]",i-1);
+    w[i-1]->Scal(1/(h[i+(i-1)*n_max]));
+      printf("\n\n");
+    w[i-1]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,buffer);
+  }
+  */
 }
