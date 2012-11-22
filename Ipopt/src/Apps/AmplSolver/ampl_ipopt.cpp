@@ -2373,28 +2373,28 @@ SmartPtr<ShiftVector> LinearizeKKT::computeAMultVector(SmartPtr<ShiftVector> tar
   // set up containers for Matrix Vector Multiplication and retval part
   SmartPtr<DenseVectorSpace> extr_space = new DenseVectorSpace(W_->NRows());
   SmartPtr<DenseVector> extractor = extr_space->MakeNewDenseVector();
-  SmartPtr<DenseVector> retval_x = target->top()->x()->MakeNewDenseVector();
-  SmartPtr<DenseVector> retval_y_c = target->top()->y_c()->MakeNewDenseVector();
-  SmartPtr<DenseVector> retval_y_d = target->top()->y_d()->MakeNewDenseVector();
+  SmartPtr<DenseVector> retval_x = dynamic_cast<DenseVector*>(target->top()->x()->MakeNew());
+  SmartPtr<DenseVector> retval_y_c = dynamic_cast<DenseVector*>(target->top()->y_c()->MakeNew());
+  SmartPtr<DenseVector> retval_y_d = dynamic_cast<DenseVector*>(target->top()->y_d()->MakeNew());
 
   // first large KKT-matrix column
-  W_->MultVector(1.0,*target->top->x(),0.0,*extractor);
+  W_->MultVector(1.0,*target->top()->x(),0.0,*extractor);
   retval_x->AddOneVector(1.0,*extractor,0.0);
-  A_->MultVector(1.0,*target->top->x(),0.0,*extractor);
+  A_->MultVector(1.0,*target->top()->x(),0.0,*extractor);
   retval_y_c->AddOneVector(1.0,*extractor,0.0);
-  B_->MultVector(1.0,*target->top->x(),0.0,*extractor);
+  B_->MultVector(1.0,*target->top()->x(),0.0,*extractor);
   retval_y_d->AddOneVector(1.0,*extractor,0.0);
 
   // second large KKT-matrix column
   extr_space = new DenseVectorSpace(A_->NCols());
   extractor = extr_space->MakeNewDenseVector();
-  A_->TransMultVector(1.0,*target->top->x(),0.0,*extractor);
+  A_->TransMultVector(1.0,*target->top()->x(),0.0,*extractor);
   retval_x->AddOneVector(1.0,*extractor,1.0);
 
   // third large KKT-matrix column
   extr_space = new DenseVectorSpace(B_->NCols());
   extractor = extr_space->MakeNewDenseVector();
-  B_->TransMultVector(1.0,*target->top->x(),0.0,*extractor);
+  B_->TransMultVector(1.0,*target->top()->x(),0.0,*extractor);
   retval_x->AddOneVector(1.0,*extractor,1.0);
 
   //set up retval
