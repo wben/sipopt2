@@ -134,6 +134,8 @@ class AmplSet:
             branchvalue = 'branchvalue product\n'
         if alg == 'control':
             algorithm = 'sensemode control\n'
+        elif alg == 'MINRES':
+            algorithm = 'sensemode MINRES\n'
         else:
             algorithm = 'sensemode GMRES\n'
 
@@ -259,6 +261,7 @@ def run():
     for q,(pLvalues,pUvalues) in enumerate([ ([0.8,0.8],[1.2,1.2])]):#  , ([0.2,0.2],[1.8,1.8]), ([0.1,0.1],[1.9,1.9]) ]):
 
 #        for (bm,sc,bv) in [(3,2,2),(2,2,2),(3,2,1)]:
+
         for bm in [2]:
             for sc in [2]:
                 for bv in  [2]:
@@ -269,9 +272,9 @@ def run():
  #       pUvalues = [1.8, 1.8]
                     ctrl = 0
                     ctrlt = 'ctrl_index'
-                    alg = 'GMRES'
-                    n_max = 4;
-                    gmr_tol = 1.0e-6;
+                    alg = 'MINRES'
+                    n_max = 366;
+                    gmr_tol = 1.0e-10;
                     info = AmplSet(ampl_script, pLnames, pUnames, pLvalues, pUvalues,bm,sc,bv,ctrl,ctrlt,alg,n_max,gmr_tol,q)
     #info.randomize(2)
                     info.branch_controlwise(1)

@@ -149,7 +149,25 @@ struct SplitDecision
   Index intervalID;
   Index parameterID;
 };
+/*
+class ShiftSolver : public ReferencedObject
+{
+public:
+  virtual SmartPtr<DenseVector> solveShiftedSystem(const ShiftVector& x0,const ShiftVector& rhs) const = 0;
+};
 
+class GMRES : public ShiftSolver
+{
+SmartPtr<DenseVector> solveShiftedSystem(const ShiftVector& x0,const ShiftVector& rhs) const;
+};
+
+class MINRES : public ShiftSolver
+{
+SmartPtr<DenseVector> solveShiftedSystem(const ShiftVector& x0,const ShiftVector& rhs) const;
+};
+
+ShiftSolver* assignShiftSolver(SmartPtr<OptionsList> options);
+*/
 class BranchingCriterion
 {
 public:
@@ -251,7 +269,7 @@ public:
   LinearizeKKT(SmartPtr<IpoptApplication> app);
   /* structural parts*/
   SplitDecision applySplitAlgorithm(SmartPtr<IpoptApplication> app);
-  SmartPtr<DenseVector> applyAlgorithmOnInterval(SmartPtr<IpoptApplication> app,const Index& interval, const Index& parameter);
+  SmartPtr<DenseVector> applyGMRESOnInterval(SmartPtr<IpoptApplication> app,const Index& interval, const Index& parameter);
 
   /*handling and manipulating data specifically*/
   bool splitIntervalIndices(const std::vector<Index>& intervalIDs,std::vector<Index>& shift_indices,const Index& interval);
@@ -260,26 +278,26 @@ public:
   SmartPtr<DenseVector> expand(SmartPtr<DenseVector> original, const Index& large_dim, const Index& start_idx) const;
   SmartPtr<DenseVector> expand(SmartPtr<IteratesVector> original, const Index& large_dim, const Index& start_idx) const;
   SmartPtr<DenseVector> shrink(SmartPtr<DenseVector> original,const std::vector<Index>& indices) const;
-  /*algorithm specific components*/
+  /*algorithm specific computeGMRESponents*/
   void assignGMRESOptions(SmartPtr<OptionsList> options,Number& tol, Index& n_max, Index& n_rest) const;
   SmartPtr<ShiftVector> computeGMRES(SmartPtr<ShiftVector>b,SmartPtr<ShiftVector>x0,const Number& tol =1.0e-6, const Index& n_max=5, const Index& n_rest=0);
-  Number computeRMultS(SmartPtr<ShiftVector> target) const;
-  Number computeSMultS(SmartPtr<ShiftVector> target) const;
-  SmartPtr<ShiftVector> computeKPMultVector(SmartPtr<ShiftVector> target) const;
   SmartPtr<ShiftVector> computeAMultVector(SmartPtr<ShiftVector> target) const;
   SmartPtr<ShiftVector> computeBMultVector(SmartPtr<ShiftVector> target) const;
   SmartPtr<ShiftVector> computeCMultVector(SmartPtr<ShiftVector> target) const;
-  SmartPtr<ShiftVector> computeKIMultVector(SmartPtr<ShiftVector> target) const;
   SmartPtr<ShiftVector> computeDMultVector(SmartPtr<ShiftVector> target) const;
+  SmartPtr<ShiftVector> computeKMultVector(SmartPtr<ShiftVector> target) const;
+  SmartPtr<ShiftVector> computeKIMultVector(SmartPtr<ShiftVector> target) const;
+  SmartPtr<ShiftVector> computeKPIMultVector(SmartPtr<ShiftVector> target) const;
+  SmartPtr<ShiftVector> computePMultVector(SmartPtr<ShiftVector> target) const;
   SmartPtr<ShiftVector> computeR(SmartPtr<ShiftVector> b, SmartPtr<ShiftVector>x) const;
   SmartPtr<ShiftVector> computeV(SmartPtr<ShiftVector> r) const;
-  SmartPtr<ShiftVector> undoConditionning(SmartPtr<ShiftVector> target) const;
   SmartPtr<const DenseVector> computeDeltaP(const IntervalInfoSet& intervals,const Index& interval, const Index& parameterID) const;
   SmartPtr<DenseVector> applyMINRESOnInterval(SmartPtr<IpoptApplication> app,const Index& interval, const Index& parameter);
   SmartPtr<ShiftVector> computeMINRES(SmartPtr<ShiftVector>b,SmartPtr<ShiftVector>x0,const Number& tol =1.0e-6, const Index& n_max=5, const Index& n_rest=0);
   void testMINRES();
 
 private:
+  //  Smarttr<ShiftSolver> solver_;
   //original Ipopt data
   SmartPtr<const Matrix> Wp_;
   SmartPtr<const Matrix> Ap_;
@@ -369,6 +387,7 @@ public:
   void Set_x(const DenseVector& x);
   void Set_y_c(const DenseVector& y_c);
   void Set_y_d(const DenseVector& y_d);
+  Number DVDim() const;
 
 private:
   ShiftVector();
@@ -782,7 +801,7 @@ SmartPtr<DenseVector> ShiftVector::getDVector() const
   Index dim = Dim();
   Index hom_val = 0;
 
-  SmartPtr<DenseVectorSpace> retval_space = new DenseVectorSpace(Dim());
+  SmartPtr<DenseVectorSpace> retval_space = new DenseVectorSpace(DVDim());
   SmartPtr<DenseVector> retval = retval_space->MakeNewDenseVector();
 
   Number* exp_values = new Number[dim];
@@ -937,48 +956,34 @@ SmartPtr<ShiftVectorSpace> ShiftVector::OwnerSpace() const
 
 void ShiftVector::Print(SmartPtr<const Journalist> jnlst, EJournalLevel level, EJournalCategory category, const std::string& name, Index indent, const std::string& prefix) const
 {
-  char  buffer[63];
-  printf("\n");
-  sprintf(buffer,"%s_top_x  ",prefix.c_str());
-  top_->x()->Print(jnlst,level,category,name,indent,buffer);
-  printf("\n");
-  sprintf(buffer,"%s_top_y_d",prefix.c_str());
-  top_->y_c()->Print(jnlst,level,category,name,indent,buffer);
-  printf("\n");
-  sprintf(buffer,"%s_top_y_c",prefix.c_str());
-  top_->y_d()->Print(jnlst,level,category,name,indent,buffer);
-  printf("\n");
-  sprintf(buffer,"%s_x",prefix.c_str());
-  x_->Print(jnlst,level,category,name,indent,buffer);
-  sprintf(buffer,"%s_y_c    ",prefix.c_str());
-  printf("\n");
-  y_c_->Print(jnlst,level,category,name,indent,buffer);
-  sprintf(buffer,"%s_y_d    ",prefix.c_str());
-  printf("\n");
-  y_d_->Print(jnlst,level,category,name,indent,buffer);
+  printf("\ntop_x\n");
+  top_->x()->Print(jnlst,level,category,name,indent,prefix);
+  printf("\ntop_y_c\n");
+  top_->y_c()->Print(jnlst,level,category,name,indent,prefix);
+  printf("\ntop_y_d\n");
+  top_->y_d()->Print(jnlst,level,category,name,indent,prefix);
+  printf("\nx\n");
+  x_->Print(jnlst,level,category,name,indent,prefix);
+  printf("\ny_c\n");
+  y_c_->Print(jnlst,level,category,name,indent,prefix);
+  printf("\ny_d\n");
+  y_d_->Print(jnlst,level,category,name,indent,prefix);
 }
 
 void ShiftVector::Print(const Journalist& jnlst, EJournalLevel level, EJournalCategory category, const std::string& name, Index indent, const std::string& prefix) const
 {
-  char  buffer[63];
-  printf("\n");
-  sprintf(buffer,"%s_top_x  ",prefix.c_str());
-  top_->x()->Print(jnlst,level,category,name,indent,buffer);
-  printf("\n");
-  sprintf(buffer,"%s_top_y_d",prefix.c_str());
-  top_->y_c()->Print(jnlst,level,category,name,indent,buffer);
-  printf("\n");
-  sprintf(buffer,"%s_top_y_c",prefix.c_str());
-  top_->y_d()->Print(jnlst,level,category,name,indent,buffer);
-  printf("\n");
-  sprintf(buffer,"%s_x",prefix.c_str());
-  x_->Print(jnlst,level,category,name,indent,buffer);
-  sprintf(buffer,"%s_y_c    ",prefix.c_str());
-  printf("\n");
-  y_c_->Print(jnlst,level,category,name,indent,buffer);
-  sprintf(buffer,"%s_y_d    ",prefix.c_str());
-  printf("\n");
-  y_d_->Print(jnlst,level,category,name,indent,buffer);
+  printf("\ntop_x\n");
+  top_->x()->Print(jnlst,level,category,name,indent,prefix);
+  printf("\ntop_y_c\n");
+  top_->y_c()->Print(jnlst,level,category,name,indent,prefix);
+  printf("\ntop_y_d\n");
+  top_->y_d()->Print(jnlst,level,category,name,indent,prefix);
+  printf("\nx\n");
+  x_->Print(jnlst,level,category,name,indent,prefix);
+  printf("\ny_c\n");
+  y_c_->Print(jnlst,level,category,name,indent,prefix);
+  printf("\ny_d\n");
+  y_d_->Print(jnlst,level,category,name,indent,prefix);
 }
 
 Number ShiftVector::Dot(const ShiftVector &x) const
@@ -1109,6 +1114,18 @@ void ShiftVector::Set_y_d(const DenseVector& y_d)
     const Number* vals = y_d.Values();
     y_d_->SetValues(vals);
   }
+}
+
+Number ShiftVector::DVDim() const
+{
+  Number retval = 0;
+  retval += top_->x()->Dim();
+  retval += top_->y_c()->Dim();
+  retval += top_->y_d()->Dim();
+  retval += x_->Dim();
+  retval += y_c_->Dim();
+  retval += y_d_->Dim();
+  return retval;
 }
 
 /*  else {
@@ -1757,7 +1774,7 @@ SplitAlgorithm* assignSplitAlgorithm(SmartPtr<IpoptApplication> app)
   if (options->GetStringValue("sensemode",sensemode,"")) {
     if (sensemode == "control") {
       retval = new SplitWRTControlSensitivities();
-    } if (sensemode == "GMRES") {
+    } if (sensemode == "GMRES" || sensemode == "MINRES") {
       retval = new LinearizeKKT(app);
     }
   } else
@@ -1868,20 +1885,28 @@ SplitDecision LinearizeKKT::applySplitAlgorithm(SmartPtr<IpoptApplication> app)
   SmartPtr<MultiVectorMatrixSpace> sens_space = new MultiVectorMatrixSpace(intervals_.size(),*sens_vspace);
   SmartPtr<MultiVectorMatrix> mv_sens = sens_space->MakeNewMultiVectorMatrix();
 
-  for (int i=0;i<intervals_.size();i++) {
-    // get GMRES approximated split results wrt each single interval
-    // i+1: in case intervalIDs start with 1 (which they do)
-    if (intervals_.isUpper(i)) {
-      sens_vec = applyAlgorithmOnInterval(app,intervals_.getIntervalID(i),intervals_.getParameterID(i));
-      //sens_vec = applyMINRESOnInterval(app,intervals_.getIntervalID(i),intervals_.getParameterID(i));
-      // printf("\n\n");
-      // sens_vec->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"sense_vec");
-    } else
-      sens_vec->Set(0);
+  std::string sensemode;
+  if (options->GetStringValue("sensemode",sensemode ,"")){
 
-    mv_sens->SetVector(i,*sens_vec);
-    sens_vec = sens_vspace->MakeNewDenseVector();
-  }
+    for (int i=0;i<intervals_.size();i++) {
+      // get GMRES approximated split results wrt each single interval
+      // i+1: in case intervalIDs start with 1 (which they do)
+      if (intervals_.isUpper(i)) {
+
+	if (sensemode =="MINRES")
+	  sens_vec = applyMINRESOnInterval(app,intervals_.getIntervalID(i),intervals_.getParameterID(i));
+	else
+	  sens_vec = applyGMRESOnInterval(app,intervals_.getIntervalID(i),intervals_.getParameterID(i));
+	//sens_vec->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"sense_vec");
+	// printf("\n\n");
+      } else
+	sens_vec->Set(0);
+
+      mv_sens->SetVector(i,*sens_vec);
+      sens_vec = sens_vspace->MakeNewDenseVector();
+    }
+
+
   // printf("\n\n");
   // mv_sens->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"mv_sens");
 
@@ -1891,14 +1916,10 @@ SplitDecision LinearizeKKT::applySplitAlgorithm(SmartPtr<IpoptApplication> app)
   ControlSelector* pickfirst = assignControlMethod(options);
   retval = pickfirst->decideSplitControl(splitchoices);
 
-  ///////////////////////only for the sake of a working python/ampl interface////
-  ////////manually performing a ctrlwise branch after LinKKT/////////////////////
-  /*
-  mv_sens = dynamic_cast<MultiVectorMatrix*>(GetRawPtr(getSensitivityMatrix(app)));
-  splitchoices = branchmode->branchSensitivityMatrix(mv_sens,options,intervals_);
-  retval = pickfirst->decideSplitControl(splitchoices);
-  */
   return retval;
+  }
+
+  assert(0);
 }
 
 // get a specific column of a given const Matrix* as a const Densevector*
@@ -2069,7 +2090,7 @@ SmartPtr<const DenseVector> LinearizeKKT::computeDeltaP(const IntervalInfoSet& i
   return dynamic_cast<const DenseVector*>(GetRawPtr(retval));
 }
 
-SmartPtr<DenseVector> LinearizeKKT::applyAlgorithmOnInterval(SmartPtr<IpoptApplication> app,const Index& interval, const Index& parameter)
+SmartPtr<DenseVector> LinearizeKKT::applyGMRESOnInterval(SmartPtr<IpoptApplication> app,const Index& interval, const Index& parameter)
 {
   // initialize neccessary quantities
   const Index n_parameters = intervals_.getParameterCount();
@@ -2105,11 +2126,11 @@ SmartPtr<DenseVector> LinearizeKKT::applyAlgorithmOnInterval(SmartPtr<IpoptAppli
 
       // split interval indices into to be shifted interval entries and remainder
       if (!splitIntervalIndices(x_intervalIDs_,shift_x_indices_,interval))
-	printf("\nLinearizeKKT::applyAlgorithmOnInterval(): ERROR: unable to split x_intervalIDs_");
+	printf("\nLinearizeKKT::applyGMRESOnInterval(): ERROR: unable to split x_intervalIDs_");
       if (!splitIntervalIndices(c_intervalIDs_,shift_c_indices_,interval))
-	printf("\nLinearizeKKT::applyAlgorithmOnInterval(): ERROR: unable to split c_intervalIDs_");
+	printf("\nLinearizeKKT::applyGMRESOnInterval(): ERROR: unable to split c_intervalIDs_");
       if (!splitIntervalIndices(d_intervalIDs_,shift_d_indices_,interval))
-	printf("\nLinearizeKKT::applyAlgorithmOnInterval(): ERROR: unable to split d_intervalIDs_");
+	printf("\nLinearizeKKT::applyGMRESOnInterval(): ERROR: unable to split d_intervalIDs_");
 
       // get different rhs entries for this column
       x_i_ = extractColumn(Wp_,i);
@@ -2148,7 +2169,7 @@ SmartPtr<DenseVector> LinearizeKKT::applyAlgorithmOnInterval(SmartPtr<IpoptAppli
       z_cond = computeGMRES(rhs,x0,tolo,n_m);
 
       // undo conditionning step to get the approximation of the postsplit sensitivity column
-      lhs = undoConditionning(z_cond);
+      lhs = computePMultVector(z_cond);
       z_postsplit = lhs->getDVector();
 
       // add the resulting sense vector to matrix ....
@@ -2244,7 +2265,7 @@ SmartPtr<ShiftVector> LinearizeKKT::computeGMRES(SmartPtr<ShiftVector>b,SmartPtr
   // outer loop
   for (Index j=0; j<n_max;j++) {
 
-    w[j] = computeKPMultVector(v[j]);
+    w[j] = computeKPIMultVector(v[j]);
 
     // update h[i,j] entries
     for (Index i=0; i<=j;i++) {
@@ -2279,7 +2300,7 @@ SmartPtr<ShiftVector> LinearizeKKT::computeGMRES(SmartPtr<ShiftVector>b,SmartPtr
     g_cnt++;
 
     // check quality of current solution
-    if ( ( (fabs(gamma[j+1]) > tol) && (!n_max) ) || (fabs(gamma[j+1]) > tol) && n_max && (j!=n_max-1))   {
+    if ( (fabs(gamma[j+1]) > tol) && ( !n_max || (n_max && (j!=n_max-1)) ) )
       // insufficient - update v[j+1]
       assert(h[j+1+j*n_max]);
       v[j+1] = new ShiftVector(*w[j]);
@@ -2320,7 +2341,7 @@ SmartPtr<ShiftVector> LinearizeKKT::computeGMRES(SmartPtr<ShiftVector>b,SmartPtr
     for (Index i=0; i<=j;i++) {
       x->AddTwoVectors(y[i],*v[i],0.0,*v[i],1.0);
     }
-    SmartPtr<ShiftVector> fooo = computeKPMultVector(x);
+    SmartPtr<ShiftVector> fooo = computeKPIMultVector(x);
     fooo->AddOneVector(-1.0,*b,1.0);
     Number residual = fooo->Nrm2();
 
@@ -2350,7 +2371,7 @@ SmartPtr<ShiftVector> LinearizeKKT::computeGMRES(SmartPtr<ShiftVector>b,SmartPtr
 SmartPtr<ShiftVector> LinearizeKKT::computeR(SmartPtr<ShiftVector> b, SmartPtr<ShiftVector>x) const
 {
   SmartPtr<ShiftVector> retval = new ShiftVector(*b);
-  SmartPtr<ShiftVector> Ax = computeKPMultVector(x);
+  SmartPtr<ShiftVector> Ax = computeKPIMultVector(x);
   retval->AddOneVector(-1.0,*Ax,1.0);
 
   return retval;
@@ -2359,7 +2380,6 @@ SmartPtr<ShiftVector> LinearizeKKT::computeR(SmartPtr<ShiftVector> b, SmartPtr<S
 SmartPtr<ShiftVector> LinearizeKKT::computeV(SmartPtr<ShiftVector> r) const
 {
   SmartPtr<ShiftVector> retval = new ShiftVector(*r);
-
 
   const Number rr = r->Nrm2();
   assert(rr);
@@ -2377,25 +2397,31 @@ SmartPtr<ShiftVector> LinearizeKKT::computeAMultVector(SmartPtr<ShiftVector> tar
   SmartPtr<DenseVector> retval_y_c = dynamic_cast<DenseVector*>(target->top()->y_c()->MakeNew());
   SmartPtr<DenseVector> retval_y_d = dynamic_cast<DenseVector*>(target->top()->y_d()->MakeNew());
 
-  // first large KKT-matrix column
+  // first largke KKT-matrix row
   W_->MultVector(1.0,*target->top()->x(),0.0,*extractor);
   retval_x->AddOneVector(1.0,*extractor,0.0);
-  A_->MultVector(1.0,*target->top()->x(),0.0,*extractor);
-  retval_y_c->AddOneVector(1.0,*extractor,0.0);
-  B_->MultVector(1.0,*target->top()->x(),0.0,*extractor);
-  retval_y_d->AddOneVector(1.0,*extractor,0.0);
 
-  // second large KKT-matrix column
   extr_space = new DenseVectorSpace(A_->NCols());
   extractor = extr_space->MakeNewDenseVector();
-  A_->TransMultVector(1.0,*target->top()->x(),0.0,*extractor);
+  A_->TransMultVector(1.0,*target->top()->y_c(),0.0,*extractor);
   retval_x->AddOneVector(1.0,*extractor,1.0);
 
-  // third large KKT-matrix column
   extr_space = new DenseVectorSpace(B_->NCols());
   extractor = extr_space->MakeNewDenseVector();
-  B_->TransMultVector(1.0,*target->top()->x(),0.0,*extractor);
+  B_->TransMultVector(1.0,*target->top()->y_d(),0.0,*extractor);
   retval_x->AddOneVector(1.0,*extractor,1.0);
+
+  // second large KKT-matrix row
+  extr_space = new DenseVectorSpace(A_->NRows());
+  extractor = extr_space->MakeNewDenseVector();
+  A_->MultVector(1.0,*target->top()->x(),0.0,*extractor);
+  retval_y_c->AddOneVector(1.0,*extractor,0.0);
+
+  // second large KKT-matrix row
+  extr_space = new DenseVectorSpace(B_->NRows());
+  extractor = extr_space->MakeNewDenseVector();
+  B_->MultVector(1.0,*target->top()->x(),0.0,*extractor);
+  retval_y_d->AddOneVector(1.0,*extractor,0.0);
 
   //set up retval
   SmartPtr<ShiftVector> retval = new ShiftVector(*target);
@@ -2403,26 +2429,6 @@ SmartPtr<ShiftVector> LinearizeKKT::computeAMultVector(SmartPtr<ShiftVector> tar
   retval->Set_x_top(*retval_x);
   retval->Set_y_c_top(*retval_y_c);
   retval->Set_y_d_top(*retval_y_d);
-  return new ShiftVector(*retval);
-}
-
-SmartPtr<ShiftVector> LinearizeKKT::computeKPMultVector(SmartPtr<ShiftVector> target) const
-{
-  SmartPtr<ShiftVector> KIM = computeKIMultVector(target);
-  SmartPtr<ShiftVector> CKIM = computeCMultVector(KIM);
-
-  SmartPtr<ShiftVector> BM = computeBMultVector(target);
-  SmartPtr<ShiftVector> DM = computeDMultVector(target);
-
-  SmartPtr<ShiftVector> IM = new ShiftVector(*target);
-  IM->Scal(0.0);
-  IM->Set_x_top(*dynamic_cast<const DenseVector*>(GetRawPtr(target->top()->x())));
-  IM->Set_y_c_top(*dynamic_cast<const DenseVector*>(GetRawPtr(target->top()->y_c())));
-  IM->Set_y_d_top(*dynamic_cast<const DenseVector*>(GetRawPtr(target->top()->y_d())));
-
-  SmartPtr<ShiftVector> retval = new ShiftVector(*target);
-  retval->AddTwoVectors(1.0,*BM,1.0,*CKIM,0.0);
-  retval->AddTwoVectors(1.0,*IM,1.0,*DM,1.0);
 
   return new ShiftVector(*retval);
 }
@@ -2461,7 +2467,6 @@ SmartPtr<ShiftVector> LinearizeKKT::computeBMultVector(SmartPtr<ShiftVector> tar
 
   SmartPtr<ShiftVector> retval = new ShiftVector(*target);
   retval->Scal(0.0);
-
   // insert calculated u part into retval
   SmartPtr<DenseVector> top_x = expand(retval_u,u_indices_,target->top()->x()->Dim());
   retval->Set_x_top(*top_x);
@@ -2494,7 +2499,6 @@ SmartPtr<ShiftVector> LinearizeKKT::computeCMultVector(SmartPtr<ShiftVector> tar
   //setup return value
   SmartPtr<ShiftVector> retval = new ShiftVector(*target);
   retval->Scal(0.0);
-
   retval->Set_x(*retval_x);
   retval->Set_y_c(*retval_y_c);
   retval->Set_y_d(*retval_y_d);
@@ -2502,22 +2506,6 @@ SmartPtr<ShiftVector> LinearizeKKT::computeCMultVector(SmartPtr<ShiftVector> tar
   return new ShiftVector(*retval);
 }
 
-SmartPtr<ShiftVector> LinearizeKKT::computeKIMultVector(SmartPtr<ShiftVector> target) const
-{
-  // do actual backsolve
-  SmartPtr<const IteratesVectorSpace> pr_space = dynamic_cast<const IteratesVectorSpace*>(GetRawPtr(target->top()->OwnerSpace()));
-  SmartPtr<IteratesVector> preretval = pr_space->MakeNewIteratesVector();
-  KKT_->Solve(1.0, 0.0, *target->top(), *preretval);
-  SmartPtr<ShiftVector> retval = new ShiftVector(*target);
-  retval->Scal(0.0);
-
-
-  retval->Set_x_top(*dynamic_cast<const DenseVector*>(GetRawPtr(preretval->x())));
-  retval->Set_y_c_top(*dynamic_cast<const DenseVector*>(GetRawPtr(preretval->y_c())));
-  retval->Set_y_d_top(*dynamic_cast<const DenseVector*>(GetRawPtr(preretval->y_d())));
-
-  return new ShiftVector(*retval);
-}
 
 SmartPtr<ShiftVector> LinearizeKKT::computeDMultVector(SmartPtr<ShiftVector> target) const
 {
@@ -2579,7 +2567,60 @@ SmartPtr<ShiftVector> LinearizeKKT::computeDMultVector(SmartPtr<ShiftVector> tar
   return new ShiftVector(*retval);
 }
 
-SmartPtr<ShiftVector> LinearizeKKT::undoConditionning(SmartPtr<ShiftVector> target) const
+SmartPtr<ShiftVector> LinearizeKKT::computeKMultVector(SmartPtr<ShiftVector> target) const
+{
+  SmartPtr<ShiftVector> retval = new ShiftVector(*target);
+  SmartPtr<ShiftVector> AM = computeAMultVector(target);
+  SmartPtr<ShiftVector> BM = computeBMultVector(target);
+  SmartPtr<ShiftVector> CM = computeCMultVector(target);
+  SmartPtr<ShiftVector> DM = computeDMultVector(target);
+
+  retval->AddTwoVectors(1.0,*AM,1.0,*BM,0.0);
+  retval->AddTwoVectors(1.0,*CM,1.0,*DM,1.0);
+
+  return new ShiftVector(*retval);
+}
+
+SmartPtr<ShiftVector> LinearizeKKT::computeKIMultVector(SmartPtr<ShiftVector> target) const
+{
+  // init neccessary quantities
+  SmartPtr<const IteratesVectorSpace> pr_space = dynamic_cast<const IteratesVectorSpace*>(GetRawPtr(target->top()->OwnerSpace()));
+  SmartPtr<IteratesVector> preretval = pr_space->MakeNewIteratesVector();
+  SmartPtr<ShiftVector> retval = new ShiftVector(*target);
+  retval->Scal(0.0);
+
+  // set up and solve
+  KKT_->Solve(1.0, 0.0, *target->top(), *preretval);
+
+  retval->Set_x_top(*dynamic_cast<const DenseVector*>(GetRawPtr(preretval->x())));
+  retval->Set_y_c_top(*dynamic_cast<const DenseVector*>(GetRawPtr(preretval->y_c())));
+  retval->Set_y_d_top(*dynamic_cast<const DenseVector*>(GetRawPtr(preretval->y_d())));
+
+  return new ShiftVector(*retval);
+}
+
+SmartPtr<ShiftVector> LinearizeKKT::computeKPIMultVector(SmartPtr<ShiftVector> target) const
+{
+  SmartPtr<ShiftVector> KIM = computeKIMultVector(target);
+  SmartPtr<ShiftVector> CKIM = computeCMultVector(KIM);
+
+  SmartPtr<ShiftVector> BM = computeBMultVector(target);
+  SmartPtr<ShiftVector> DM = computeDMultVector(target);
+
+  SmartPtr<ShiftVector> IM = new ShiftVector(*target);
+  IM->Scal(0.0);
+  IM->Set_x_top(*dynamic_cast<const DenseVector*>(GetRawPtr(target->top()->x())));
+  IM->Set_y_c_top(*dynamic_cast<const DenseVector*>(GetRawPtr(target->top()->y_c())));
+  IM->Set_y_d_top(*dynamic_cast<const DenseVector*>(GetRawPtr(target->top()->y_d())));
+
+  SmartPtr<ShiftVector> retval = new ShiftVector(*target);
+  retval->AddTwoVectors(1.0,*BM,1.0,*CKIM,0.0);
+  retval->AddTwoVectors(1.0,*IM,1.0,*DM,1.0);
+
+  return new ShiftVector(*retval);
+}
+
+SmartPtr<ShiftVector> LinearizeKKT::computePMultVector(SmartPtr<ShiftVector> target) const
 {
   SmartPtr<IteratesVector> retval_top = target->top()->MakeNewIteratesVectorCopy();
 
@@ -2597,25 +2638,6 @@ SmartPtr<ShiftVector> LinearizeKKT::undoConditionning(SmartPtr<ShiftVector> targ
   // set up retval
   SmartPtr<ShiftVector> retval = new ShiftVector(retval_top,target->x(),target->y_c(),target->y_d());
 
-  return retval;
-}
-
-Number LinearizeKKT::computeRMultS(SmartPtr<ShiftVector> target) const
-{
-  Number retval =0;
-  SmartPtr<ShiftVector> S = computeKPMultVector(target);
-  retval+= target->Dot(*S);
-  printf("\ncomputeRMultS: retval is %e", retval);
-  return retval;
-}
-
-Number LinearizeKKT::computeSMultS(SmartPtr<ShiftVector> target) const
-{
-  Number retval =0;
-
-  SmartPtr<ShiftVector> S = computeKPMultVector(target);
-  retval+= S->Dot(*S);
-  printf("\ncomputeSMultS: retval is %e", retval);
   return retval;
 }
 
@@ -2895,8 +2917,8 @@ SmartPtr<DenseVector> LinearizeKKT::applyMINRESOnInterval(SmartPtr<IpoptApplicat
   SmartPtr<IteratesVector> rhs_top;
   SmartPtr<DenseVector> rhs_x,rhs_y_c,rhs_y_d;
   SmartPtr<ShiftVector> rhs;
-  SmartPtr<ShiftVector> z_cond;
   SmartPtr<ShiftVector> lhs;
+  SmartPtr<ShiftVector> z_cond;
   SmartPtr<ShiftVector> x0;
   IntervalInfoSet smallset;
   std::vector<IntervalInfo> int_info_vec;
@@ -2915,11 +2937,11 @@ SmartPtr<DenseVector> LinearizeKKT::applyMINRESOnInterval(SmartPtr<IpoptApplicat
 
       // split interval indices into to be shifted interval entries and remainder
       if (!splitIntervalIndices(x_intervalIDs_,shift_x_indices_,interval))
-	printf("\nLinearizeKKT::applyAlgorithmOnInterval(): ERROR: unable to split x_intervalIDs_");
+	printf("\nLinearizeKKT::applyMINESOnInterval(): ERROR: unable to split x_intervalIDs_");
       if (!splitIntervalIndices(c_intervalIDs_,shift_c_indices_,interval))
-	printf("\nLinearizeKKT::applyAlgorithmOnInterval(): ERROR: unable to split c_intervalIDs_");
+	printf("\nLinearizeKKT::applyMINESOnInterval(): ERROR: unable to split c_intervalIDs_");
       if (!splitIntervalIndices(d_intervalIDs_,shift_d_indices_,interval))
-	printf("\nLinearizeKKT::applyAlgorithmOnInterval(): ERROR: unable to split d_intervalIDs_");
+	printf("\nLinearizeKKT::applyMINESOnInterval(): ERROR: unable to split d_intervalIDs_");
 
       // get different rhs entries for this column
       x_i_ = extractColumn(Wp_,i);
@@ -2933,33 +2955,87 @@ SmartPtr<DenseVector> LinearizeKKT::applyMINRESOnInterval(SmartPtr<IpoptApplicat
       top_space = dynamic_cast<const IteratesVectorSpace*>(GetRawPtr(app->IpoptDataObject()->curr()->OwnerSpace()));
       rhs_top = top_space->MakeNewIteratesVector();
       rhs_top->Set(0.0);
+      // x_i_->Set(5.0);
+      // y_c_i_->Set(6.0);
+      // y_d_i_->Set(7.0);
       rhs_top->Set_x_NonConst(*x_i_);
       rhs_top->Set_y_c_NonConst(*y_c_i_);
       rhs_top->Set_y_d_NonConst(*y_d_i_);
 
       SmartPtr<DenseVectorSpace> x_sp = new DenseVectorSpace(shift_x_indices_.size());
       rhs_x = x_sp->MakeNewDenseVector();
+      //      rhs_x->Set(8.0);
       rhs_x = shrink(x_i_,shift_x_indices_);
       SmartPtr<DenseVectorSpace> y_c_sp = new DenseVectorSpace(shift_c_indices_.size());
       rhs_y_c = y_c_sp->MakeNewDenseVector();
+      //      rhs_y_c->Set(9.0);
       rhs_y_c = shrink(y_c_i_,shift_c_indices_);
       SmartPtr<DenseVectorSpace> y_d_sp = new DenseVectorSpace(shift_d_indices_.size());
       rhs_y_d = y_d_sp->MakeNewDenseVector();
+      //      rhs_y_d->Set(10.0);
       rhs_y_d = shrink(y_d_i_,shift_d_indices_);
 
       rhs = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
+      // lhs = new ShiftVector(*rhs);
+      // ////////////////////////////////////////////////////////////////
+      // rhs_top = top_space->MakeNewIteratesVector();
+      // rhs_top->Set(0.0);
+      // x_i_ = x_i_->MakeNewDenseVector();
+      // x_i_->Set(31.0);
+      // y_c_i_ = y_c_i_->MakeNewDenseVector();
+      // y_c_i_->Set(37.0);
+      // y_d_i_ = y_d_i_->MakeNewDenseVector();
+      // y_d_i_->Set(41.0);
+      // rhs_top->Set_x_NonConst(*x_i_);
+      // rhs_top->Set_y_c_NonConst(*y_c_i_);
+      // rhs_top->Set_y_d_NonConst(*y_d_i_);
 
+      // rhs_x = x_sp->MakeNewDenseVector();
+      // rhs_x->Set(43.0);
+      // //      rhs_x = shrink(x_i_,shift_x_indices_);
+
+      // rhs_y_c = y_c_sp->MakeNewDenseVector();
+      // rhs_y_c->Set(47.0);
+      // //      rhs_y_c = shrink(y_c_i_,shift_c_indices_);
+
+      // rhs_y_d = y_d_sp->MakeNewDenseVector();
+      // rhs_y_d->Set(53.0);
+      // //      rhs_y_d = shrink(y_d_i_,shift_d_indices_);
+
+      // lhs = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
+
+
+      // ////////////////////////////////////////////////////////////////
       // create x0
       x0 = new ShiftVector(*rhs);
       x0->Set(0.0);
 
-      // compute solution of the GMRES-Step
+      // compute solution of the MINRES-Step
       assignGMRESOptions(app->Options(),tolo,n_m,n_rst);
       z_cond = computeMINRES(rhs,x0,tolo,n_m);
 
-      // undo conditionning step to get the approximation of the postsplit sensitivity column
-      lhs = undoConditionning(z_cond);
-      z_postsplit = lhs->getDVector();
+      // z_cond = computeKIMultVector(rhs);
+      // printf("\n");
+      // z_cond->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"KIMV");
+      // x0 = computeAMultVector(z_cond);
+      // x0->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"prhs");
+
+      // rhs->AddOneVector(-1.0,*x0,1.0);
+      // printf("\n");
+      // rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"0s?");
+      // printf("\n");
+
+      // x0 = computeKIMultVector(lhs);
+      // x0->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"Alhs");
+      // z_cond = computeAMultVector(x0);
+      // z_cond->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"plhs");
+
+      // lhs->AddOneVector(-1.0,*z_cond,1.0);
+      // printf("\n");
+      // lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"other 0s?");
+
+      // convert the ShiftVector into a DenseVector
+      z_postsplit = z_cond->getDVector();
 
       // add the resulting sense vector to matrix ....
       sense->SetVector(s_count,*z_postsplit);
@@ -2970,15 +3046,10 @@ SmartPtr<DenseVector> LinearizeKKT::applyMINRESOnInterval(SmartPtr<IpoptApplicat
     IntervalInfo int_info = IntervalInfo(intervals_.getValue(i),intervals_.getParameterID(i),intervals_.getIntervalID(i),i,intervals_.isUpper(i));
   int_info_vec.push_back(int_info);
   }
-
   smallset = IntervalInfoSet(int_info_vec);
-  //  smallset.printSet();
 
   // get the parameter perturbation for this split
   deltap = computeDeltaP(intervals_,interval,parameter);
-  // printf("\n");
-  // deltap->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG,"delta p");
-
   // calculate absolute sensitivity values
   sense->MultVector(1.0,*deltap,0.0,*res_vsense);
 
@@ -2998,9 +3069,10 @@ SmartPtr<ShiftVector> LinearizeKKT::computeMINRES(SmartPtr<ShiftVector>b,SmartPt
 
   x[0] = new ShiftVector(*x0);
 
-  r[0] = computeR(b,x0);
+  r[0] = new ShiftVector(*b);
+  r[0]->AddOneVector(-1.0,*computeKMultVector(x[0]),1.0);
   p[0] = new ShiftVector(*r[0]);
-  s[0] = computeKPMultVector(p[0]);
+  s[0] = computeKMultVector(p[0]);
 
   for (int i=1;i<n_max;i++) {
     // calculate steplength
@@ -3023,13 +3095,12 @@ SmartPtr<ShiftVector> LinearizeKKT::computeMINRES(SmartPtr<ShiftVector>b,SmartPt
       minres.open(fname.c_str());
       minres << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
       for (int k=0;k<i;k++) {
-	sprintf(buffer,"\nNrm2(r)[%d] = %e",k,r[k]->Nrm2());
-	minres << buffer;
-	SmartPtr<ShiftVector> tmp = computeKPMultVector(x[k]);
+	SmartPtr<ShiftVector> tmp = computeKMultVector(x[k]);
 	tmp->AddOneVector(-1.0,*b,1.0);
-	sprintf(buffer,"\nNrm2(Ax[%d]-b) = %e",k,tmp->Nrm2());
+	sprintf(buffer,"\nresidual[%d] = %e      (relative: %e)",k,tmp->Nrm2(), tmp->Nrm2()/b->Nrm2());
 	minres << buffer;
       }
+
       minres << "\n\n#end of file";
       minres.close();
 
@@ -3037,10 +3108,10 @@ SmartPtr<ShiftVector> LinearizeKKT::computeMINRES(SmartPtr<ShiftVector>b,SmartPt
 
     } else {
       // update stepdirection
-      p[i] = s[i-1];
+      p[i] = new ShiftVector(*s[i-1]);
 
       // update s
-      s[i] = computeKPMultVector(s[i-1]);
+      s[i] = computeKMultVector(s[i-1]);
 
       if (i>=2)
 	j_thresh=2;
@@ -3053,8 +3124,27 @@ SmartPtr<ShiftVector> LinearizeKKT::computeMINRES(SmartPtr<ShiftVector>b,SmartPt
       }
     }
   }
+  std::string fname = "minres.dat";
+  std::ofstream minres;
+  char buffer[63];
+  minres.open(fname.c_str());
+  minres << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
+  for (int k=0;k<n_max;k++) {
+    sprintf(buffer,"\nNrm2(r)[%d] = %e",k,r[k]->Nrm2());
+    minres << buffer;
 
-  return x[n_max-1];
+  }
+  for (int k=0;k<n_max;k++) {
+    SmartPtr<ShiftVector> tmp = computeKMultVector(x[k]);
+    tmp->AddOneVector(-1.0,*b,1.0);
+    sprintf(buffer,"\nresidual[%d] = %e      (relative: %e)",k,tmp->Nrm2(), tmp->Nrm2()/b->Nrm2());
+    minres << buffer;
+  }
+
+  minres << "\n\n#end of file";
+  minres.close();
+
+  return new ShiftVector(*x[n_max-1]);
 }
 
 void LinearizeKKT::testMINRES()
