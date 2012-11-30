@@ -278,7 +278,8 @@ public:
   SmartPtr<DenseVector> expand(SmartPtr<DenseVector> original, const Index& large_dim, const Index& start_idx) const;
   SmartPtr<DenseVector> expand(SmartPtr<IteratesVector> original, const Index& large_dim, const Index& start_idx) const;
   SmartPtr<DenseVector> shrink(SmartPtr<DenseVector> original,const std::vector<Index>& indices) const;
-  /*algorithm specific computeGMRESponents*/
+  SmartPtr<MultiVectorMatrix> computeVMultEye(SmartPtr<const DenseVector> target) const;
+  /*algorithm specific components*/
   void assignGMRESOptions(SmartPtr<OptionsList> options,Number& tol, Index& n_max, Index& n_rest) const;
   SmartPtr<ShiftVector> computeGMRES(SmartPtr<ShiftVector>b,SmartPtr<ShiftVector>x0,const Number& tol =1.0e-6, const Index& n_max=5, const Index& n_rest=0);
   SmartPtr<ShiftVector> computeAMultVector(SmartPtr<ShiftVector> target) const;
@@ -294,6 +295,8 @@ public:
   SmartPtr<const DenseVector> computeDeltaP(const IntervalInfoSet& intervals,const Index& interval, const Index& parameterID) const;
   SmartPtr<DenseVector> applyMINRESOnInterval(SmartPtr<IpoptApplication> app,const Index& interval, const Index& parameter);
   SmartPtr<ShiftVector> computeMINRES(SmartPtr<ShiftVector>b,SmartPtr<ShiftVector>x0,const Number& tol =1.0e-6, const Index& n_max=5, const Index& n_rest=0);
+  std::vector<Index> collectIntervalIDMetaData() const;
+
   void testMINRES();
 
 private:
@@ -2231,6 +2234,44 @@ SmartPtr<DenseVector> LinearizeKKT::shrink(SmartPtr<DenseVector> original,const 
   return NULL;
 }
 
+SmartPtr<MultiVectorMatrix> LinearizeKKT::computeVMultEye(SmartPtr<const DenseVector> target) const
+{
+  // prepare spaces and variables
+  SmartPtr<DenseVectorSpace> retvec_space = new DenseVectorSpace(target->Dim());
+  SmartPtr<DenseVector> retvec;
+  SmartPtr<MultiVectorMatrixSpace> retval_space = new MultiVectorMatrixSpace(target->Dim(),*retvec_space);
+  SmartPtr<MultiVectorMatrix> retval = retval_space->MakeNewMultiVectorMatrix();
+  const bool homog = target->IsHomogeneous();
+  Number val;
+  Number* vals = new Number[target->Dim()];
+  Number* retvals = new Number[target->Dim()];
+
+  // get target values
+  if (homog) {
+    val = target->Scalar();
+  } else {
+    const Number* tmp_vals = target->Values();
+    std::copy(tmp_vals,tmp_vals+target->Dim(),vals);
+  }
+
+  // set up vector values and assign vectors
+  for (int i=0;i<target->Dim();i++) {
+    retvec = retvec_space->MakeNewDenseVector();
+    for (int j=0;j<target->Dim();j++)
+      retvals[j] = 0;
+
+    if (homog)
+      retvals[i] = val;
+    else
+      retvals[i] = vals[i];
+
+    retvec->SetValues(retvals);
+    retval->SetVector(i,*retvec);
+  }
+
+  return retval;
+}
+
 SmartPtr<const DenseVector> LinearizeKKT::computeDeltaP(const IntervalInfoSet& intervals,const Index& interval, const Index& parameterID) const
 {
   // collect neccessary data
@@ -2764,6 +2805,7 @@ SmartPtr<ShiftVector> LinearizeKKT::computeDMultVector(SmartPtr<ShiftVector> tar
 
 SmartPtr<ShiftVector> LinearizeKKT::computeKMultVector(SmartPtr<ShiftVector> target) const
 {
+
   SmartPtr<ShiftVector> retval = new ShiftVector(*target);
   SmartPtr<ShiftVector> AM = computeAMultVector(target);
   SmartPtr<ShiftVector> BM = computeBMultVector(target);
@@ -2772,6 +2814,87 @@ SmartPtr<ShiftVector> LinearizeKKT::computeKMultVector(SmartPtr<ShiftVector> tar
 
   retval->AddTwoVectors(1.0,*AM,1.0,*BM,0.0);
   retval->AddTwoVectors(1.0,*CM,1.0,*DM,1.0);
+
+  /*
+
+  //  SmartPtr<ShiftVector> EM =
+  SmartPtr<DenseVector> z_x_part = dynamic_cast<DenseVector*>(z_L_->MakeNewCopy());
+  z_x_part->AddOneVector(-1.0,*z_U_,1.0);
+  //    void ElementWiseDivide(const Vector& x);
+
+
+  /////////TESTING PLAYGROUND///////////////////////////////
+  SmartPtr<const IteratesVectorSpace> pr_space = dynamic_cast<const IteratesVectorSpace*>(GetRawPtr(target->top()->OwnerSpace()));
+  SmartPtr<IteratesVector> preretval = pr_space->MakeNewIteratesVector();
+  KKT_->Solve(1.0, 0.0, *target->top(), *preretval);
+
+  //testing 4th row
+  SmartPtr<DenseVectorSpace> test_sp = new DenseVectorSpace(B_->NRows());
+  SmartPtr<DenseVector> test = test_sp->MakeNewDenseVector();
+  SmartPtr<DenseVector> test2 = test_sp->MakeNewDenseVector();
+  B_->MultVector(1.0,*preretval->x(),0.0,*test);
+  test->AddOneVector(-1.0,*s_,1.0);
+  printf("\n");
+  target->top()->y_d()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs y_d!");
+  printf("\n");
+  test->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs y_d?");
+
+  //testing 2nd row
+  test_sp = new DenseVectorSpace(Pd_L_->NRows());
+  test = test_sp->MakeNewDenseVector();
+  test2 = test_sp->MakeNewDenseVector();
+  Pd_L_->MultVector(-1.0,*preretval->v_L(),0.0,*test);
+  Pd_U_->MultVector(1.0,*preretval->v_U(),0.0,*test2);
+  test->AddTwoVectors(-1.0,*preretval->y_d(),1.0,*test2,1.0);
+  printf("\n");
+  test->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs s?");
+  printf("\n");
+  target->top()->s()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs s!");
+
+  // testing 1st row
+  test_sp = new DenseVectorSpace(W_->NRows());
+  test = test_sp->MakeNewDenseVector();
+  test2 = test_sp->MakeNewDenseVector();
+  W_->MultVector(1.0,*preretval->x(),0.0,*test);
+  A_->MultVector(1.0,*preretval->y_c(),0.0,*test2);
+  test->AddOneVector(1.0,*test2,1.0);
+  test2 = test_sp->MakeNewDenseVector();
+  B_->MultVector(1.0,*preretval->y_d(),0.0,*test2);
+  test->AddOneVector(1.0,*test2,1.0);
+  test2 = test_sp->MakeNewDenseVector();
+  Px_L_->MultVector(1.0,*preretval->z_L(),0.0,*test2);
+  test->AddOneVector(-1.0,*test2,1.0);
+  test2 = test_sp->MakeNewDenseVector();
+  Px_U_->MultVector(1.0,*preretval->z_U(),0.0,*test2);
+  test->AddOneVector(1.0,*test2,1.0);
+  printf("\n");
+  test->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs x?");
+  printf("\n");
+  target->top()->x()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs x!");
+
+  //testing 5th row
+  SmartPtr<MultiVectorMatrix> Z_L = computeVMultEye(z_L_);
+
+  //  Z_L->AddRightMultMatrix(1.0,*Z_L,*Px_L_,0.0);
+  test = test_sp->MakeNewDenseVector();
+  test2 = test_sp->MakeNewDenseVector();
+  Z_L->MultVector(1.0,*preretval->x(),0.0,*test);
+
+  printf("\nPx_L_: NRows: %d  NCols: %d",Px_L_->NRows(),Px_L_->NCols());
+  printf("\nPx_U_: NRows: %d  NCols: %d",Px_U_->NRows(),Px_U_->NCols());
+  printf("\nPd_L_: NRows: %d  NCols: %d",Pd_L_->NRows(),Pd_L_->NCols());
+  printf("\nPd_U_: NRows: %d  NCols: %d",Pd_U_->NRows(),Pd_U_->NCols());
+
+  printf("\nz_L_: Dim: %d",z_L_->Dim());
+  printf("\nz_U_: Dim: %d",z_U_->Dim());
+  printf("\nv_L_: Dim: %d",v_L_->Dim());
+  printf("\nv_U_: Dim: %d",v_U_->Dim());
+
+  printf("\nx_L_: Dim: %d",x_L_->Dim());
+  printf("\nx_U_: Dim: %d",x_U_->Dim());
+  printf("\nd_L_: Dim: %d",d_L_->Dim());
+  printf("\nd_U_: Dim: %d",d_U_->Dim());
+  */
 
   return new ShiftVector(*retval);
 }
@@ -3099,8 +3222,8 @@ SplitDecision SplitIntAtBound::applySplitAlgorithm(SmartPtr<IpoptApplication> ap
 
 SmartPtr<DenseVector> LinearizeKKT::applyMINRESOnInterval(SmartPtr<IpoptApplication> app,const Index& interval, const Index& parameter)
 {
-  // printf("\n");
-  // app->IpoptDataObject()->curr()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"curr()");
+  printf("\n");
+  app->IpoptDataObject()->curr()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"curr()");
   // initialize neccessary quantities
   const Index n_parameters = intervals_.getParameterCount();
   std::vector<Index> intervalIDs = intervals_.getIntervalIDVec();
@@ -3228,8 +3351,8 @@ SmartPtr<DenseVector> LinearizeKKT::applyMINRESOnInterval(SmartPtr<IpoptApplicat
       // compute solution of the MINRES-Step
       //      rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs");
       assignGMRESOptions(app->Options(),tolo,n_m,n_rst);
-      //      z_cond = computeMINRES(rhs,x0,tolo,n_m);
-      z_cond = computeKMultVector(*rhs);
+      z_cond = computeMINRES(rhs,x0,tolo,n_m);
+      //      z_cond = computeKMultVector(rhs);
 
 /*      printf("\n");
       x0->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"0s");
