@@ -279,16 +279,7 @@ private:
   Index index_;
 };
 
-class SelectNameControl : public ControlSelector
-{
-public:
-  SelectNameControl(const std::string& name);
-  SplitDecision decideSplitControl(const std::vector<SplitChoice>& choices) const;
-private:
-  std::string name_;
-};
-
-ControlSelector* assignControlMethod(SmartPtr<OptionsList> options);
+ControlSelector* assignControlMethod(SmartPtr<IpoptApplication> app);
 
 class SplitAlgorithm
 {
@@ -339,8 +330,11 @@ public:
   SmartPtr<const DenseVector> computeDeltaP(const IntervalInfoSet& intervals,const Index& interval, const Index& parameterID) const;
   SmartPtr<DenseVector> applyMINRESOnInterval(SmartPtr<IpoptApplication> app,const Index& interval, const Index& parameter);
   SmartPtr<ShiftVector> computeMINRES(SmartPtr<ShiftVector>b,SmartPtr<ShiftVector>x0,const Number& tol =1.0e-6, const Index& n_max=5, const Index& n_rest=0) const;
-  void convertBackToUnsymmetric(SmartPtr<ShiftVector> target) const;
+  SmartPtr<ShiftVector> testSVMINRES(SmartPtr<ShiftVector>b,SmartPtr<ShiftVector>x0,const Number& tol =1.0e-6, const Index& n_max=5, const Index& n_rest=0) const;
+  SmartPtr<ShiftVector> testKSymMultVector(SmartPtr<ShiftVector> target) const;
+  void convertBackToUnsymmetric(SmartPtr<ShiftVector> target,const Number& mu=0.0) const;
   std::vector<Index> collectIntMetaData() const;
+  Number getMuFromOptions(SmartPtr<OptionsList> options) const;
   /*linear system solution algorithm test functions*/
   void testMINRES();
   void testGMRES();
@@ -1019,7 +1013,7 @@ SmartPtr<ShiftVectorSpace> ShiftVector::OwnerSpace() const
 
 void ShiftVector::Print(SmartPtr<const Journalist> jnlst, EJournalLevel level, EJournalCategory category, const std::string& name, Index indent, const std::string& prefix) const
 {
-  printf("\ntop\n");
+  printf("\ntop");
   top_->Print(jnlst,level,category,name,indent,prefix);
   printf("\nx\n");
   x_->Print(jnlst,level,category,name,indent,prefix);
@@ -1041,7 +1035,7 @@ void ShiftVector::Print(SmartPtr<const Journalist> jnlst, EJournalLevel level, E
 
 void ShiftVector::Print(const Journalist& jnlst, EJournalLevel level, EJournalCategory category, const std::string& name, Index indent, const std::string& prefix) const
 {
-  printf("\ntop\n");
+  printf("\ntop");
   top_->Print(jnlst,level,category,name,indent,prefix);
   printf("\nx\n");
   x_->Print(jnlst,level,category,name,indent,prefix);
@@ -1904,29 +1898,33 @@ SplitDecision SelectIndexControl::decideSplitControl(const std::vector<SplitChoi
   return retval;
 }
 
-SelectNameControl::SelectNameControl(const std::string& name)
+ControlSelector* assignControlMethod(SmartPtr<IpoptApplication> app)
 {
-  name_ = name;
-}
+  SmartPtr<OptionsList> options = app->Options();
 
-SplitDecision SelectNameControl::decideSplitControl(const std::vector<SplitChoice>& choices) const
-{
-  /*    //////////////////////////////////////////////////not implemented yet
-  SplitDecision retval;
-  retval.intervalID = choices[index_].intervalID;
-  retval.parameterID = choices[index_].parameterID;
-  return retval; */
-}
-
-ControlSelector* assignControlMethod(SmartPtr<OptionsList> options)
-{
   // read from options what kind of controlselector to return
   ControlSelector* retval = new SelectIndexControl(0);
-  Index index;
+  Index index = 0;
   std::string name;
   if (options->GetStringValue("ctrl_name",name,"")) {
-    if (name.size()>0)
-      retval =  new SelectNameControl(name);
+    if (name.size()>0) {
+      SmartPtr<const DenseVectorSpace> space = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(app->IpoptDataObject()->curr()->x()->OwnerSpace()));
+      assert(space->HasStringMetaData("idx_names"));
+      const std::vector<std::basic_string<char> > names = space->GetStringMetaData("idx_names");
+      for (Index i=0;i<space->Dim();i++) {
+	if (!names[i].compare(name.c_str())) {
+	  index = i;
+	  break;
+	}
+	if (i==space->Dim()-1)
+	  index = -1;
+      }
+      if (index < 0) {
+	bool ctrl_name_found_in_idx_names = false;
+	assert (ctrl_name_found_in_idx_names);
+      }
+      retval =  new SelectIndexControl(index);
+    }
   } else if (options->GetIntegerValue("ctrl_index",index,"")) {
 
     retval =  new SelectIndexControl(index);
@@ -1975,7 +1973,7 @@ SplitDecision SplitWRTControlSensitivities::applySplitAlgorithm(SmartPtr<IpoptAp
 
   std::vector<SplitChoice> splitchoices = branchmode->branchSensitivityMatrix(mv_sens,options,intervals);
 
-  ControlSelector* pickfirst = assignControlMethod(options);
+  ControlSelector* pickfirst = assignControlMethod(app);
   return pickfirst->decideSplitControl(splitchoices);
 }
 
@@ -2027,6 +2025,8 @@ LinearizeKKT::LinearizeKKT(SmartPtr<IpoptApplication> app)
   Ap_  = orig_nlp->jac_c_p(*x_);
   Bp_  = orig_nlp->jac_d_p(*x_);
   W_ = orig_nlp->h(*x_, 1.0, *y_c_, *y_d_);
+  // printf("\n");
+  // W_->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"_W_");
   A_ = orig_nlp->jac_c(*x_);
   B_ = orig_nlp->jac_d(*x_);
 
@@ -2149,11 +2149,6 @@ LinearizeKKT::LinearizeKKT(SmartPtr<IpoptApplication> app)
   Sl_s_L_->AddOneVector(1.0,*s_,-1.0);
   Sl_s_U_->AddOneVector(-1.0,*s_,1.0);
 
-  printf("\n");
-  Sl_s_L_->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"Slsl");
-  printf("\n");
-  Sl_s_U_->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"Slsu");
-
   // expand bound multipliers for inequalities
   v_L_DIV_Sl_ = s_->MakeNewDenseVector();
   Pd_L_->MultVector(1.0,*v_L_,0.0,*v_L_DIV_Sl_);
@@ -2164,14 +2159,14 @@ LinearizeKKT::LinearizeKKT(SmartPtr<IpoptApplication> app)
   v_L_DIV_Sl_->ElementWiseDivide(*Sl_s_L_);
   v_U_DIV_Sl_->ElementWiseDivide(*Sl_s_U_);
 
-  printf("\n");
-  z_L_DIV_Sl_->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"zldiv");
-  printf("\n");
-  z_U_DIV_Sl_->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"zudiv");
-  printf("\n");
-  v_L_DIV_Sl_->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"vldiv");
-  printf("\n");
-  v_U_DIV_Sl_->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"vudiv");
+  // printf("\n");
+  // z_L_DIV_Sl_->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"zldiv");
+  // printf("\n");
+  // z_U_DIV_Sl_->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"zudiv");
+  // printf("\n");
+  // v_L_DIV_Sl_->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"vldiv");
+  // printf("\n");
+  // v_U_DIV_Sl_->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"vudiv");
 }
 
 /* apply GMRES-approximation of a split to all intervals and decide for the smartest split*/
@@ -2225,7 +2220,7 @@ SplitDecision LinearizeKKT::applySplitAlgorithm(SmartPtr<IpoptApplication> app)
   // chose the split with best results
   BranchingCriterion* branchmode = assignBranchingMethod(options);
   std::vector<SplitChoice> splitchoices = branchmode->branchSensitivityMatrix(mv_sens,options,intervals_,ctrl_rows,true);
-  ControlSelector* pickfirst = assignControlMethod(options);
+  ControlSelector* pickfirst = assignControlMethod(app);
   retval = pickfirst->decideSplitControl(splitchoices);
 
   return retval;
@@ -2775,26 +2770,27 @@ SmartPtr<ShiftVector> LinearizeKKT::computeAMVminres(SmartPtr<ShiftVector> targe
   // first large KKT-matrix row
   W_->MultVector(1.0,*target->top()->x(),0.0,*extractor);
   retval_x->AddOneVector(1.0,*extractor,0.0);
+  /*
+  // additional part due to symmetricising of the KKT matrix
+  extractor = retval_x->MakeNewDenseVector();
+  extractor->AddTwoVectors(1.0,*z_L_DIV_Sl_,1.0,*z_U_DIV_Sl_,0.0);
+  extractor->ElementWiseMultiply(*target->top()->x());
+  retval_x->AddOneVector(1.0,*extractor,1.0);
+  */
+  extractor = retval_x->MakeNewDenseVector();
+  A_->TransMultVector(1.0,*target->top()->y_c(),0.0,*extractor);
+  retval_x->AddOneVector(1.0,*extractor,1.0);
 
-  // // additional part due to symmetricising of the KKT matrix
-  // extractor = retval_x->MakeNewDenseVector();
-  // extractor->AddTwoVectors(1.0,*z_L_DIV_Sl_,1.0,*z_U_DIV_Sl_,0.0);
-  // extractor->ElementWiseMultiply(*target->top()->x());
-  // retval_x->AddOneVector(1.0,*extractor,1.0);
+  extractor = retval_x->MakeNewDenseVector();
+  B_->TransMultVector(1.0,*target->top()->y_d(),0.0,*extractor);
+  retval_x->AddOneVector(1.0,*extractor,1.0);
 
-  // extractor = retval_x->MakeNewDenseVector();
-  // A_->TransMultVector(1.0,*target->top()->y_c(),0.0,*extractor);
-  // retval_x->AddOneVector(1.0,*extractor,1.0);
-
-  // extractor = retval_x->MakeNewDenseVector();
-  // B_->TransMultVector(1.0,*target->top()->y_d(),0.0,*extractor);
-  // retval_x->AddOneVector(1.0,*extractor,1.0);
-
-  // // second large KKT-matrix row
-  // extractor = retval_s->MakeNewDenseVector();
-  // extractor->AddTwoVectors(1.0,*v_L_DIV_Sl_,1.0,*v_U_DIV_Sl_,0.0);
-  // extractor->ElementWiseMultiply(*target->top()->s());
-  // retval_s->AddTwoVectors(-1.0,*target->top()->y_d(),1.0,*extractor,0.0);
+  // second large KKT-matrix row
+  extractor = retval_s->MakeNewDenseVector();
+  extractor->AddTwoVectors(1.0,*v_L_DIV_Sl_,1.0,*v_U_DIV_Sl_,0.0);
+  extractor->Set(0.0);
+  extractor->ElementWiseMultiply(*target->top()->s());
+  retval_s->AddTwoVectors(-1.0,*target->top()->y_d(),1.0,*extractor,0.0);
 
   // third large KKT-matrix row
   extractor = retval_y_c->MakeNewDenseVector();
@@ -2806,11 +2802,11 @@ SmartPtr<ShiftVector> LinearizeKKT::computeAMVminres(SmartPtr<ShiftVector> targe
   B_->MultVector(1.0,*target->top()->x(),0.0,*extractor);
   retval_y_d->AddTwoVectors(1.0,*extractor,-1.0,*target->top()->s(),0.0);
 
-  //set up retval
+  // set up retval
   SmartPtr<ShiftVector> retval = new ShiftVector(*target);
-  retval->Scal(0.0);
+  retval->Set(0.0);
   retval->Set_x_top(*retval_x);
-  //  retval->Set_s_top(*retval_s);
+  retval->Set_s_top(*retval_s);
   retval->Set_y_c_top(*retval_y_c);
   retval->Set_y_d_top(*retval_y_d);
 
@@ -2830,14 +2826,6 @@ SmartPtr<ShiftVector> LinearizeKKT::computeBMVminres(SmartPtr<ShiftVector> targe
   //map results back to get u part
   SmartPtr<DenseVector> extr_u_part = shrink(extractor,u_indices_);
   retval_u->AddOneVector(1.0,*extr_u_part,0.0);
-
-  // additional part due to symmetricising of the KKT matrix
-  extractor = extractor_space->MakeNewDenseVector();
-  extractor->AddTwoVectors(1.0,*z_L_DIV_Sl_,1.0,*z_U_DIV_Sl_,0.0);
-  extractor->ElementWiseMultiply(*target->top()->x());
-  //map results back to get u part
-  extr_u_part = shrink(extractor,u_indices_);
-  retval_u->AddOneVector(1.0,*extr_u_part,1.0);
 
   //get (A_shift^T times rhs_i) parts with i= (u, shift_c)
   tmp_rhs = expand(target->y_c(),shift_c_indices_,A_->NRows());
@@ -2902,7 +2890,7 @@ SmartPtr<ShiftVector> LinearizeKKT::computeDMVminres(SmartPtr<ShiftVector> targe
 {
   // init retval parts
   SmartPtr<DenseVector> retval_x = target->x()->MakeNewDenseVector();
-  SmartPtr<DenseVector> retval_s = dynamic_cast<DenseVector*>(target->s()->MakeNewCopy());
+  SmartPtr<DenseVector> retval_s = dynamic_cast<DenseVector*>(target->s()->MakeNew());
   SmartPtr<DenseVector> retval_y_c = target->y_c()->MakeNewDenseVector();
   SmartPtr<DenseVector> retval_y_d = target->y_d()->MakeNewDenseVector();
 
@@ -2915,14 +2903,15 @@ SmartPtr<ShiftVector> LinearizeKKT::computeDMVminres(SmartPtr<ShiftVector> targe
   // map results back
   SmartPtr<DenseVector> extr_shift_part = shrink(extractor,shift_x_indices_);
   retval_x->AddOneVector(1.0,*extr_shift_part,0.0);
-
+/*
   // additional part due to symmetricising of the KKT matrix
   extractor = extractor_space->MakeNewDenseVector();
   extractor->AddTwoVectors(1.0,*z_L_DIV_Sl_,1.0,*z_U_DIV_Sl_,0.0);
-  extractor->ElementWiseMultiply(*target->top()->x());
+  tmp_rhs = expand(target->x(),shift_x_indices_,extractor->Dim());
+  extractor->ElementWiseMultiply(*tmp_rhs);
   tmp_rhs = shrink(extractor,shift_x_indices_);
-  retval_x->AddOneVector(1.0,*extractor,1.0);
-
+  retval_x->AddOneVector(1.0,*tmp_rhs,1.0);
+*/
   // get A_shift,shift_c^T times rhs_shift_c part
   tmp_rhs = expand(target->y_c(),shift_c_indices_,A_->NRows());
   extractor_space = new DenseVectorSpace(A_->NCols());
@@ -2942,11 +2931,12 @@ SmartPtr<ShiftVector> LinearizeKKT::computeDMVminres(SmartPtr<ShiftVector> targe
   retval_x->AddOneVector(1.0,*extr_shift_part,1.0);
 
   // second row
-  extractor_space = new DenseVectorSpace(B_->NCols());
+  extractor_space = new DenseVectorSpace(B_->NRows());
   extractor = extractor_space->MakeNewDenseVector();
   extractor->AddTwoVectors(1.0,*v_L_DIV_Sl_,1.0,*v_U_DIV_Sl_,0.0);
-  extractor->ElementWiseMultiply(*target->top()->s());
-  tmp_rhs = dynamic_cast<DenseVector*>(target->top()->y_d()->MakeNewCopy());
+  tmp_rhs = expand(target->s(),shift_d_indices_,extractor->Dim());
+  extractor->ElementWiseMultiply(*tmp_rhs);
+  tmp_rhs = dynamic_cast<DenseVector*>(target->y_d()->MakeNewCopy());
   retval_s = shrink(tmp_rhs,shift_d_indices_);
   tmp_rhs = shrink(extractor,shift_d_indices_);
   retval_s->AddOneVector(1.0,*tmp_rhs,-1.0);
@@ -2954,7 +2944,8 @@ SmartPtr<ShiftVector> LinearizeKKT::computeDMVminres(SmartPtr<ShiftVector> targe
   // third row
   // get (A_shift times rhs_shift_c) part
   tmp_rhs = expand(target->x(),shift_x_indices_,A_->NCols());
-  extractor = tmp_rhs->MakeNewDenseVector();
+  extractor_space = new DenseVectorSpace(A_->NRows());
+  extractor = extractor_space->MakeNewDenseVector();
   A_->MultVector(1.0,*tmp_rhs,0.0,*extractor);
   //map results back
   retval_y_c = shrink(extractor,shift_c_indices_);
@@ -2962,7 +2953,8 @@ SmartPtr<ShiftVector> LinearizeKKT::computeDMVminres(SmartPtr<ShiftVector> targe
   // fourth row
   // get (B_shift times rhs_shift_d) part
   tmp_rhs = expand(target->x(),shift_x_indices_,B_->NCols());
-  extractor = tmp_rhs->MakeNewDenseVector();
+  extractor_space = new DenseVectorSpace(B_->NRows());
+  extractor = extractor_space->MakeNewDenseVector();
   B_->MultVector(1.0,*tmp_rhs,0.0,*extractor);
   // map results back
   retval_y_d = shrink(extractor,shift_d_indices_);
@@ -2987,13 +2979,22 @@ SmartPtr<ShiftVector> LinearizeKKT::computeKSymMultVector(SmartPtr<ShiftVector> 
   SmartPtr<ShiftVector> DM = computeDMVminres(target);
 
   // printf("\n");
-  // AM->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"AM");
+  // AM->top()->x()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"AM_x_top");
   // printf("\n");
-  // BM->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"BM");
+  // AM->x()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"AM_x");
   // printf("\n");
-  // CM->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"CM");
+  // BM->top()->x()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"BM_x_top");
   // printf("\n");
-  // DM->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"DM");
+  // BM->x()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"BM_x");
+  // printf("\n");
+  // CM->top()->x()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"CM_x_top");
+  // printf("\n");
+  // CM->x()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"CM_x");
+  // printf("\n");
+  // DM->top()->x()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"DM_x_top");
+  // printf("\n");
+  // DM->x()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"DM_x");
+
 
   retval->AddTwoVectors(1.0,*AM,1.0,*BM,0.0);
   retval->AddTwoVectors(1.0,*CM,1.0,*DM,1.0);
@@ -3350,6 +3351,7 @@ SmartPtr<DenseVector> LinearizeKKT::applyMINRESOnInterval(SmartPtr<IpoptApplicat
   SmartPtr<ShiftVector> lhs;
   SmartPtr<ShiftVector> z_cond;
   SmartPtr<ShiftVector> x0;
+  Number mu = getMuFromOptions(app->Options());
   Number tolo;
   Index n_m,n_rst;
 
@@ -3392,29 +3394,26 @@ SmartPtr<DenseVector> LinearizeKKT::applyMINRESOnInterval(SmartPtr<IpoptApplicat
       top_space = dynamic_cast<const IteratesVectorSpace*>(GetRawPtr(app->IpoptDataObject()->curr()->OwnerSpace()));
       rhs_top = top_space->MakeNewIteratesVector();
       rhs_top->Set(0.0);
-      // x_i_->Set(5.0);
-      // y_c_i_->Set(6.0);
-      // y_d_i_->Set(7.0);
       rhs_top->Set_x_NonConst(*x_i_);
       rhs_top->Set_y_c_NonConst(*y_c_i_);
       rhs_top->Set_y_d_NonConst(*y_d_i_);
+      // x_i_->Set(1.0);
+      // y_c_i_->Set(0.0);
+      // y_d_i_->Set(0.0);
 
       SmartPtr<DenseVectorSpace> sv_bot_space = new DenseVectorSpace(int(shift_x_indices_.size()));
       rhs_x = sv_bot_space->MakeNewDenseVector();
-      //      rhs_x->Set(8.0);
       rhs_x = shrink(x_i_,shift_x_indices_);
 
       sv_bot_space = new DenseVectorSpace(int(shift_c_indices_.size()));
       rhs_y_c = sv_bot_space->MakeNewDenseVector();
-      //rhs_y_c->Set(9.0);
       rhs_y_c = shrink(y_c_i_,shift_c_indices_);
 
       sv_bot_space = new DenseVectorSpace(int(shift_d_indices_.size()));
       rhs_y_d = sv_bot_space->MakeNewDenseVector();
-      //rhs_y_d->Set(10.0);
       rhs_y_d = shrink(y_d_i_,shift_d_indices_);
 
-      // fill rest with 0s
+      // fill rest with 0s - this is symmetricized MINRES!
       sv_bot_space = new DenseVectorSpace(int(shift_d_indices_.size()));
       rhs_s = sv_bot_space->MakeNewDenseVector();
       rhs_s->Set(0.0);
@@ -3436,37 +3435,6 @@ SmartPtr<DenseVector> LinearizeKKT::applyMINRESOnInterval(SmartPtr<IpoptApplicat
       rhs_v_U->Set(0.0);
 
       rhs = new ShiftVector(rhs_top,rhs_x,rhs_s,rhs_y_c,rhs_y_d,rhs_z_L,rhs_z_U,rhs_v_L,rhs_v_U);
-      // printf("\n");
-      // rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs=tr");
-
-
-      // lhs = new ShiftVector(*rhs);
-      // ////////////////////////////////////////////////////////////////
-      // rhs_top = top_space->MakeNewIteratesVector();
-      // rhs_top->Set(0.0);
-      // x_i_ = x_i_->MakeNewDenseVector();
-      // x_i_->Set(31.0);
-      // y_c_i_ = y_c_i_->MakeNewDenseVector();
-      // y_c_i_->Set(37.0);
-      // y_d_i_ = y_d_i_->MakeNewDenseVector();
-      // y_d_i_->Set(41.0);
-      // rhs_top->Set_x_NonConst(*x_i_);
-      // rhs_top->Set_y_c_NonConst(*y_c_i_);
-      // rhs_top->Set_y_d_NonConst(*y_d_i_);
-
-      // rhs_x = x_sp->MakeNewDenseVector();
-      // rhs_x->Set(43.0);
-      // //      rhs_x = shrink(x_i_,shift_x_indices_);
-
-      // rhs_y_c = y_c_sp->MakeNewDenseVector();
-      // rhs_y_c->Set(47.0);
-      // //      rhs_y_c = shrink(y_c_i_,shift_c_indices_);
-
-      // rhs_y_d = y_d_sp->MakeNewDenseVector();
-      // rhs_y_d->Set(53.0);
-      // //      rhs_y_d = shrink(y_d_i_,shift_d_indices_);
-
-      // lhs = new ShiftVector(rhs_top,rhs_x,rhs_y_c,rhs_y_d);
 
       // ////////////////////////////////////////////////////////////////
       // create x0
@@ -3476,22 +3444,318 @@ SmartPtr<DenseVector> LinearizeKKT::applyMINRESOnInterval(SmartPtr<IpoptApplicat
       // assign options and compute solution of the MINRES-Step
       assignGMRESOptions(app->Options(),tolo,n_m,n_rst);
       //      testMINRES();
-      //      z_cond = new ShiftVector (*x0);
-      //      z_cond = computeMINRES(rhs,x0,tolo,n_m);
-      rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs pre");
+      z_cond = computeMINRES(rhs,x0,tolo,n_m);
+      //      z_cond = testSVMINRES(rhs,x0,tolo,n_m);
+
+
+/*
       z_cond = computeKSymMultVector(rhs);
-      rhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rhs pst");
-      z_cond->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"KMrhs ");
+
+      printf("\n");
+      z_cond->x()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rvxtop ");
+      printf("\n");
+      z_cond->s()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rvstop ");
+      printf("\n");
+      z_cond->y_c()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rvyctop");
+      printf("\n");
+      z_cond->y_d()->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rvydtop");
+
+      // AMV faky ****
+      SmartPtr<DenseVector> retval_x_top = dynamic_cast<DenseVector*>(rhs->top()->x()->MakeNew());
+      SmartPtr<DenseVector> retval_s_top = dynamic_cast<DenseVector*>(rhs->top()->s()->MakeNew());
+      SmartPtr<DenseVector> retval_yc_top = dynamic_cast<DenseVector*>(rhs->top()->y_c()->MakeNew());
+      SmartPtr<DenseVector> retval_yd_top = dynamic_cast<DenseVector*>(rhs->top()->y_d()->MakeNew());
+      SmartPtr<DenseVector> retval_x_bot = rhs->x()->MakeNewDenseVector();
+      SmartPtr<DenseVector> retval_s_bot = rhs->s()->MakeNewDenseVector();
+      SmartPtr<DenseVector> retval_yc_bot = rhs->y_c()->MakeNewDenseVector();
+      SmartPtr<DenseVector> retval_yd_bot = rhs->y_d()->MakeNewDenseVector();
+
+      // first ROW
+      // Wx
+      SmartPtr<DenseVector> extractor = retval_x_top->MakeNewDenseVector();
+      W_->MultVector(1.0,*rhs->top()->x(),0.0,*extractor);
+      retval_x_top->AddOneVector(1.0,*extractor,0.0);
+      // z/slx
+      SmartPtr<DenseVector> extractor2 = dynamic_cast<DenseVector*>(rhs->top()->x()->MakeNewCopy());
+      extractor->AddTwoVectors(1.0,*z_L_DIV_Sl_,1.0,*z_U_DIV_Sl_,0.0);
+      extractor->ElementWiseMultiply(*extractor2);
+      retval_x_top->AddOneVector(1.0,*extractor,1.0);
+      // printf("\n");
+      // retval_x_top->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rvxtopohnemakenew");
+
+      // ATx
+      extractor = retval_x_top->MakeNewDenseVector();
+      A_->TransMultVector(1.0,*rhs->top()->y_c(),0.0,*extractor);
+      retval_x_top->AddOneVector(1.0,*extractor,1.0);
+
+      // BTx
+      extractor = retval_x_top->MakeNewDenseVector();
+      B_->TransMultVector(1.0,*rhs->top()->y_d(),0.0,*extractor);
+      retval_x_top->AddOneVector(1.0,*extractor,1.0);
+
+      // second ROW
+      extractor = retval_s_top->MakeNewDenseVector();
+      extractor->AddTwoVectors(1.0,*v_L_DIV_Sl_,1.0,*v_U_DIV_Sl_,0.0);
+      extractor->ElementWiseMultiply(*rhs->top()->s());
+      retval_s_top->AddOneVector(1.0,*extractor,0.0);
+
+      // third ROW
+      extractor = retval_yc_top->MakeNewDenseVector();
+      A_->MultVector(1.0,*rhs->top()->x(),0.0,*extractor);
+      retval_yc_top->AddOneVector(1.0,*extractor,0.0);
+
+      // fourth ROW
+      extractor = retval_yd_top->MakeNewDenseVector();
+      B_->MultVector(1.0,*rhs->top()->x(),0.0,*extractor);
+      retval_yd_top->AddTwoVectors(1.0,*extractor,-1.0,*rhs->top()->s(),0.0);
+
+      printf("\n");
+      retval_x_top->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rvxtop ");
+      printf("\n");
+      retval_s_top->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rvstop ");
+      printf("\n");
+      retval_yc_top->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rvyctop");
+      printf("\n");
+      retval_yd_top->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"rvydtop");
+
+      // faky B part
+      SmartPtr<DenseVectorSpace> u_space = new DenseVectorSpace(u_indices_.size());
+      SmartPtr<DenseVector> lhs = retval_x_top->MakeNewDenseVector();
+      SmartPtr<DenseVector> u_part = u_space->MakeNewDenseVector();
+      SmartPtr<DenseVector> shift_part = rhs->x()->MakeNewDenseVector();
+      SmartPtr<DenseVector> extractor = retval_x_top->MakeNewDenseVector();
+
+      // w part
+      // set up lhs
+      shift_part = dynamic_cast<DenseVector*>(rhs->x()->MakeNewCopy());
+      lhs = expand(shift_part,shift_x_indices_,retval_x_top->Dim());
+      // multiply
+      W_->MultVector(1.0,*lhs,0.0,*extractor);
+      // extract u part
+      u_part = shrink(extractor,u_indices_);
+      extractor = expand(u_part,u_indices_,retval_x_top->Dim());
+      retval_x_top->AddOneVector(1.0,*extractor,0.0);
+
+      // a part
+      // set up lhs
+      shift_part = dynamic_cast<DenseVector*>(rhs->y_c()->MakeNewCopy());
+      lhs = expand(shift_part,shift_c_indices_,rhs->top()->y_c()->Dim());
+      extractor = retval_x_top->MakeNewDenseVector();
+      // multiply
+      A_->TransMultVector(1.0,*lhs,0.0,*extractor);
+      // extract u part
+      u_part = shrink(extractor,u_indices_);
+      extractor = expand(u_part,u_indices_,retval_x_top->Dim());
+      retval_x_top->AddOneVector(1.0,*extractor,1.0);
+
+      // b part
+      // set up lhs
+      shift_part = dynamic_cast<DenseVector*>(rhs->y_d()->MakeNewCopy());
+      lhs = expand(shift_part,shift_d_indices_,rhs->top()->y_d()->Dim());
+      extractor = retval_x_top->MakeNewDenseVector();
+      // multiply
+      B_->TransMultVector(1.0,*lhs,0.0,*extractor);
+      // extract u part
+      u_part = shrink(extractor,u_indices_);
+      extractor = expand(u_part,u_indices_,retval_x_top->Dim());
+      retval_x_top->AddOneVector(1.0,*extractor,1.0);
+
+
+      // faky C stuff
+      // first ROW
+      SmartPtr<DenseVector> extractor = retval_x_top->MakeNewDenseVector();
+      SmartPtr<DenseVector> shift_part = rhs->x()->MakeNewDenseVector();
+      SmartPtr<DenseVectorSpace> u_space = new DenseVectorSpace(int(u_indices_.size()));
+      SmartPtr<DenseVector> u_part = u_space->MakeNewDenseVector();
+      SmartPtr<DenseVector> lhs = retval_x_top->MakeNewDenseVector();
+      // get shift part
+      u_part = shrink(dynamic_cast<DenseVector*>(rhs->top()->x()->MakeNewCopy()),u_indices_);
+      lhs = expand(u_part,u_indices_,retval_x_top->Dim());
+      // multiply
+      W_->MultVector(1.0,*lhs,0.0,*extractor);
+      // get shift part
+      shift_part = shrink(extractor,shift_x_indices_);
+      retval_x_bot->AddOneVector(1.0,*shift_part,0.0);
+
+      // seccond ROW
+      retval_s_bot->Set(0.0);
+
+      // third ROW
+      // get u part
+      u_part = shrink(dynamic_cast<DenseVector*>(rhs->top()->x()->MakeNewCopy()),u_indices_);
+      lhs = expand(u_part,u_indices_,retval_x_top->Dim());
+      extractor = retval_yc_top->MakeNewDenseVector();
+      // multiply
+      A_->MultVector(1.0,*lhs,0.0,*extractor);
+      // extract shift part
+      shift_part = retval_yc_bot->MakeNewDenseVector();
+      shift_part = shrink(extractor,shift_c_indices_);
+      retval_yc_bot->AddOneVector(1.0,*shift_part,0.0);
+
+      // fourth ROW
+      // get u part
+      u_part = shrink(dynamic_cast<DenseVector*>(rhs->top()->x()->MakeNewCopy()),u_indices_);
+      lhs = expand(u_part,u_indices_,retval_x_top->Dim());
+      extractor = retval_yd_top->MakeNewDenseVector();
+      // multiply
+      B_->MultVector(1.0,*lhs,0.0,*extractor);
+      // extract shift part
+      shift_part = retval_yd_bot->MakeNewDenseVector();
+      shift_part = shrink(extractor,shift_d_indices_);
+      retval_yd_bot->AddOneVector(1.0,*shift_part,0.0);
+
+
+      // faky D Part yo
+      // first row
+      // W times stuff
+      SmartPtr<DenseVector> extractor = retval_x_top->MakeNewDenseVector();
+      SmartPtr<DenseVector> lhs = retval_x_top->MakeNewDenseVector();
+      SmartPtr<DenseVector> shift_part = retval_x_bot->MakeNewDenseVector();
+      SmartPtr<DenseVector> shift_part2 = retval_x_bot->MakeNewDenseVector();
+      // get shift part
+      shift_part = dynamic_cast<DenseVector*>(rhs->x()->MakeNewCopy());
+      lhs = expand(shift_part,shift_x_indices_,retval_x_top->Dim());
+      // multiply
+      W_->MultVector(1.0,*lhs,0.0,*extractor);
+      shift_part = shrink(extractor,shift_x_indices_);
+      // get retval
+      retval_x_bot->AddOneVector(1.0,*shift_part,0.0);
+
+      //x*z/sl stuff
+      // shrink privates
+      extractor = retval_x_bot->MakeNewDenseVector();
+      shift_part = shrink(z_L_DIV_Sl_,shift_x_indices_);
+      shift_part2 = shrink(z_U_DIV_Sl_,shift_x_indices_);
+      // sum shrinked privates
+      extractor->AddTwoVectors(1.0,*shift_part2,1.0,*shift_part,0.0);
+      // multiply with rhs x
+      shift_part = dynamic_cast<DenseVector*>(rhs->x()->MakeNewCopy());
+      shift_part->ElementWiseMultiply(*extractor);
+      // add to retval
+      retval_x_bot->AddOneVector(1.0,*shift_part,1.0);
+
+      //AT times stuff
+      // expand shift part
+      extractor = retval_x_top->MakeNewDenseVector();
+      shift_part = dynamic_cast<DenseVector*>(rhs->y_c()->MakeNewCopy());
+      lhs = expand(shift_part,shift_c_indices_,retval_yc_top->Dim());
+      // multiply
+      A_->TransMultVector(1.0,*lhs,0.0,*extractor);
+      // get shift part
+      shift_part = shrink(extractor,shift_x_indices_);
+      retval_x_bot->AddOneVector(1.0,*shift_part,1.0);
+
+      // BT times stuff
+      // expand shift part
+      extractor = retval_x_top->MakeNewDenseVector();
+      shift_part = dynamic_cast<DenseVector*>(rhs->y_d()->MakeNewCopy());
+      lhs = expand(shift_part,shift_d_indices_,retval_yd_top->Dim());
+      // multiply
+      B_->TransMultVector(1.0,*lhs,0.0,*extractor);
+      // get shift part
+      shift_part = shrink(extractor,shift_x_indices_);
+      retval_x_bot->AddOneVector(1.0,*shift_part,1.0);
+
+      // second ROW
+      // shrink privates
+      extractor = retval_s_bot->MakeNewDenseVector();
+      shift_part = retval_s_bot->MakeNewDenseVector();
+      shift_part2 = retval_s_bot->MakeNewDenseVector();
+      shift_part = shrink(v_L_DIV_Sl_,shift_d_indices_);
+      shift_part2 = shrink(v_U_DIV_Sl_,shift_d_indices_);
+      // sum shrinked privates
+      extractor->AddTwoVectors(1.0,*shift_part,1.0,*shift_part2,0.0);
+      // multiply with rhs s
+      shift_part = dynamic_cast<DenseVector*>(rhs->s()->MakeNewCopy());
+      shift_part->ElementWiseMultiply(*extractor);
+      // add to retval
+      retval_s_bot->AddTwoVectors(1.0,*shift_part,-1.0,*rhs->y_d(),0.0);
+
+      // third ROW
+      // expand
+      lhs = retval_x_top->MakeNewDenseVector();
+      lhs = expand(rhs->x(),shift_x_indices_,retval_x_top->Dim());
+      extractor = retval_yc_top->MakeNewDenseVector();
+      // multiply
+      A_->MultVector(1.0,*lhs,0.0,*extractor);
+      // get shift part and add to retval
+      shift_part = shrink(extractor,shift_c_indices_);
+      retval_yc_bot->AddOneVector(1.0,*shift_part,0.0);
+
+      // fourth ROW
+      // expand
+      lhs = retval_x_top->MakeNewDenseVector();
+      lhs = expand(rhs->x(),shift_x_indices_,retval_x_top->Dim());
+      extractor = retval_yd_top->MakeNewDenseVector();
+      // multiply
+      B_->MultVector(1.0,*lhs,0.0,*extractor);
+      // get shift part and add to retval
+      shift_part = shrink(extractor,shift_d_indices_);
+      retval_yd_bot->AddTwoVectors(1.0,*shift_part,-1.0,*rhs->s(),0.0);
+
+
+      printf("\n");
+      retval_x_bot->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"x_bot");
+      printf("\n");
+      retval_s_bot->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"s_bot");
+      printf("\n");
+      retval_yc_bot->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"yc_bot");
+      printf("\n");
+      retval_yd_bot->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"yd_bot");
+*/
+      /*
+      SmartPtr<DenseVectorSpace> extractor_space = new DenseVectorSpace(x0->top()->x()->Dim());
+      SmartPtr<DenseVector> extractor = extractor_space->MakeNewDenseVector();
+      extractor->AddTwoVectors(1.0,*z_L_DIV_Sl_,1.0,*z_U_DIV_Sl_,0.0);
+      printf("\n");
+      extractor->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"exxxxor");
+
+
+      tmp_rhs = expand(target->x(),shift_x_indices_,extractor->Dim());
+      extractor->ElementWiseMultiply(*tmp_rhs);
+      tmp_rhs = shrink(extractor,shift_x_indices_);
+      retval_x->AddOneVector(1.0,*tmp_rhs,1.0);
+
+
+
+      x0->Set(1.0);
+      z_cond = computeKSymMultVector(x0);
+      z_cond->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"zcond");
+      */
+
+ /*
+
+      lhs = new ShiftVector(*rhs);
+      lhs->Set(4.0e+7);
+      x0->Set(80.0e+2);
+      rhs->Set(1.0);
+      x0 = computeKSymMultVector(rhs);
+      printf("\n");
+      x0->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"mh ");
+
+
+      //rhs->Set(3.0);
+
+
+      SmartPtr<ShiftVector> mg = computeKSymMultVector(x0);
+      SmartPtr<ShiftVector> mh = computeKSymMultVector(rhs);
+      // mh->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"mh ");
+      // x0->AddTwoVectors(1.0,*mf,1.0,*mg,0.0);
+
+      // for (unsigned int i=0;i<c_intervalIDs_.size();i++) {
+      // 	printf("\n c_index[%d] = %d",i,c_intervalIDs_[i]);
+      // }
+
+      mh->AddTwoVectors(1.0,*mf,1.0,*mg,-1.0);
+      printf("\n");
+      mh->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"0s ");
+*/
+      //      assert(0);
 
       // convert symmetricized solution from MINRES back to unsymmetric equivalent
-      convertBackToUnsymmetric(z_cond);
+      convertBackToUnsymmetric(z_cond,mu);
 
 /*      printf("\n");
-
-
-
-
-      // printf("\n");
 
 
       z_cond->Set(1.0);
@@ -3669,12 +3933,16 @@ SmartPtr<ShiftVector> LinearizeKKT::computeMINRES(SmartPtr<ShiftVector>b,SmartPt
   SmartPtr<ShiftVector> retval;
 
   x[1] = new ShiftVector(*x0);
-  r[1] = new ShiftVector(*b);
-  r[1]->AddOneVector(-1.0,*computeKSymMultVector(x[1]),1.0);
-  p[1] = new ShiftVector(*r[1]);
-  p[0] = new ShiftVector(*p[1]);
-  s[1] = computeKSymMultVector(p[1]);
-  s[0] = new ShiftVector(*s[1]);
+  r[1] = computeKSymMultVector(x[1]);
+  // r[1] = testKSymMultVector(x[1]);
+  r[1]->AddOneVector(1.0,*b,-1.0);
+  if (r[1]->Nrm2()<tol)
+    return x0;
+  p[0] = new ShiftVector(*r[1]);
+  p[1] = new ShiftVector(*p[0]);
+  s[0] = computeKSymMultVector(p[0]);
+  // s[0] = testKSymMultVector(p[0]);
+  s[1] = new ShiftVector(*s[0]);
   // printf("\n");
   // s[0]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"s[0]");
 
@@ -3697,17 +3965,32 @@ SmartPtr<ShiftVector> LinearizeKKT::computeMINRES(SmartPtr<ShiftVector>b,SmartPt
     printf("\nLinearizeKKT:computeMINRES(): Assertion due to 's' being a douche: Nrm2 = %e  or %f",s[1]->Nrm2(),s[1]->Nrm2());
       s[1]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"s_assert");
     }
-
     assert(s[1] ->Dot(* s[1]));
+    //    assert(1/(s[1] ->Dot(* s[1])));
+    printf("\nMINRES: %d.er Lauf, s[1] ->Dot(* s[1]) = %e",i,s[1] ->Dot(* s[1]));
+    if (s[2] ->Dot(* s[2]) == 0) {
+    printf("\nLinearizeKKT:computeMINRES(): Assertion due to 's' being a douche: Nrm2 = %e  or %f",s[2]->Nrm2(),s[2]->Nrm2());
+      s[2]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"s_assert");
+    }
+    assert(s[2] ->Dot(* s[2]));
+    //    assert(1/(s[2] ->Dot(* s[2])));
 
     // calculate steplength
     alpha = (r[0] ->Dot(* s[1])) / (s[1] ->Dot(* s[1]));
+    if (!alpha) {
+      printf("\ncomputeMINRES(): steplength is 0. Aborting.");
+      x[1]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"x_assert");
+    } else
+      printf("\ncomputeMINRES(): steplength is %e.",alpha);
+    assert(alpha);
+    assert(1/alpha);
     // update solution
     x[1] = new ShiftVector(*x[0]);
     x[1]->AddOneVector(alpha,*p[1],1.0);
 
     // output current residual
     SmartPtr<ShiftVector> tmp = computeKSymMultVector(x[1]);
+    //    SmartPtr<ShiftVector> tmp = testKSymMultVector(x[1]);
     tmp->AddOneVector(-1.0,*b,1.0);
     sprintf(buffer,"\nresidual[%d] = %e     (relative: %e)",i,tmp->Nrm2(), tmp->Nrm2()/b->Nrm2());
     minres << buffer;
@@ -3717,7 +4000,6 @@ SmartPtr<ShiftVector> LinearizeKKT::computeMINRES(SmartPtr<ShiftVector>b,SmartPt
     r[1]->AddOneVector(-1.0*alpha,*s[1],1.0);
 
     if (r[1]->Nrm2()<tol) {
-
       // target accuracy achieved - compute and return solution
       printf("\n target accuracy achieved. r[1]->Nrm2() is: %e, which is less than tol: %e\n",r[1]->Nrm2(),tol);
       x[1]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"x_sol");
@@ -3731,12 +4013,14 @@ SmartPtr<ShiftVector> LinearizeKKT::computeMINRES(SmartPtr<ShiftVector>b,SmartPt
 
       // update s
       s[0] = computeKSymMultVector(s[1]);
+      //      s[0] = testKSymMultVector(s[1]);
 
       if (i>=2)
 	j_thresh=2;
 
       // modify updated  p and s
     assert(s[2] ->Dot(* s[2]));
+    assert(1 / (s[2] ->Dot(* s[2]) ));
       for (int j=0;j<j_thresh;j++) {
 	beta[j] = s[j+1] ->Dot(* s[0] ) / s[j+1] ->Dot(* s[j+1]);
 	p[0]->AddOneVector(-1.0*beta[j],*p[j+1],1.0);
@@ -3751,18 +4035,13 @@ SmartPtr<ShiftVector> LinearizeKKT::computeMINRES(SmartPtr<ShiftVector>b,SmartPt
   return new ShiftVector(*x[1]);
 }
 
-void LinearizeKKT::convertBackToUnsymmetric(SmartPtr<ShiftVector> target) const
+void LinearizeKKT::convertBackToUnsymmetric(SmartPtr<ShiftVector> target,const Number& mu) const
 {
-  // hard coded - needs to be read from options
-  // const Number mu_target = readMuFromOptions(options_);
-  // ODER in GMRES Options auch assignen
-  const Number mu_target = 1.0e-6;
-
   // top - z
   SmartPtr<DenseVector> top_zl = dynamic_cast<DenseVector*>(target->top()->x()->MakeNew());
   SmartPtr<DenseVector> top_x = dynamic_cast<DenseVector*>(target->top()->x()->MakeNewCopy());
   SmartPtr<DenseVector> z_B_e = dynamic_cast<DenseVector*>(target->top()->x()->MakeNew());
-  top_zl->Set(mu_target);
+  top_zl->Set(mu);
   top_zl->ElementWiseDivide(*Sl_x_L_);
   top_x->ElementWiseMultiply(*z_L_DIV_Sl_);
   Px_L_->MultVector(1.0,*z_L_,0.0,*z_B_e);
@@ -3773,7 +4052,7 @@ void LinearizeKKT::convertBackToUnsymmetric(SmartPtr<ShiftVector> target) const
   SmartPtr<DenseVector> top_zu = dynamic_cast<DenseVector*>(target->top()->x()->MakeNew());
   top_x = dynamic_cast<DenseVector*>(target->top()->x()->MakeNewCopy());
   z_B_e = dynamic_cast<DenseVector*>(target->top()->x()->MakeNew());
-  top_zu->Set(mu_target);
+  top_zu->Set(mu);
   top_zu->ElementWiseDivide(*Sl_x_U_);
   top_x->ElementWiseMultiply(*z_U_DIV_Sl_);
   Px_U_->MultVector(1.0,*z_U_,0.0,*z_B_e);
@@ -3785,7 +4064,7 @@ void LinearizeKKT::convertBackToUnsymmetric(SmartPtr<ShiftVector> target) const
   SmartPtr<DenseVector> top_vl = dynamic_cast<DenseVector*>(target->top()->s()->MakeNew());
   SmartPtr<DenseVector> top_s = dynamic_cast<DenseVector*>(target->top()->s()->MakeNewCopy());
   SmartPtr<DenseVector> v_B_e = dynamic_cast<DenseVector*>(target->top()->s()->MakeNew());
-  top_vl->Set(mu_target);
+  top_vl->Set(mu);
   top_vl->ElementWiseDivide(*Sl_s_L_);
   top_s->ElementWiseMultiply(*v_L_DIV_Sl_);
   Pd_L_->MultVector(1.0,*v_L_,0.0,*v_B_e);
@@ -3796,7 +4075,7 @@ void LinearizeKKT::convertBackToUnsymmetric(SmartPtr<ShiftVector> target) const
   SmartPtr<DenseVector> top_vu = dynamic_cast<DenseVector*>(target->top()->s()->MakeNew());
   top_s = dynamic_cast<DenseVector*>(target->top()->s()->MakeNewCopy());
   v_B_e = dynamic_cast<DenseVector*>(target->top()->s()->MakeNew());
-  top_vu->Set(mu_target);
+  top_vu->Set(mu);
   top_vu->ElementWiseDivide(*Sl_s_U_);
   top_s->ElementWiseMultiply(*v_U_DIV_Sl_);
   Pd_U_->MultVector(1.0,*v_U_,0.0,*v_B_e);
@@ -3811,7 +4090,7 @@ void LinearizeKKT::convertBackToUnsymmetric(SmartPtr<ShiftVector> target) const
   // printf("\n");
   // z_B_e->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"zbe pre");
   bot_x = expand(z_B_e,shift_x_indices_,bot_zl->Dim());
-  bot_zl->Set(mu_target);
+  bot_zl->Set(mu);
   bot_zl->ElementWiseDivide(*Sl_x_L_);
   bot_x->ElementWiseMultiply(*z_L_DIV_Sl_);
   // printf("\n");
@@ -3828,7 +4107,7 @@ void LinearizeKKT::convertBackToUnsymmetric(SmartPtr<ShiftVector> target) const
   // printf("\n");
   // bot_zl->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"bzl pst");
   bot_x = expand(z_B_e,shift_x_indices_,bot_zu->Dim());
-  bot_zu->Set(mu_target);
+  bot_zu->Set(mu);
   bot_zu->ElementWiseDivide(*Sl_x_U_);
   bot_x->ElementWiseMultiply(*z_U_DIV_Sl_);
   z_B_e = dynamic_cast<DenseVector*>(target->top()->x()->MakeNew());
@@ -3841,7 +4120,7 @@ void LinearizeKKT::convertBackToUnsymmetric(SmartPtr<ShiftVector> target) const
   SmartPtr<DenseVector> bot_s;
   v_B_e = dynamic_cast<DenseVector*>(target->s()->MakeNewCopy());
   bot_s = expand(v_B_e,shift_d_indices_,bot_vl->Dim());
-  bot_vl->Set(mu_target);
+  bot_vl->Set(mu);
   bot_vl->ElementWiseDivide(*Sl_s_L_);
   bot_s->ElementWiseMultiply(*v_L_DIV_Sl_);
   v_B_e = dynamic_cast<DenseVector*>(target->top()->s()->MakeNew());
@@ -3852,7 +4131,7 @@ void LinearizeKKT::convertBackToUnsymmetric(SmartPtr<ShiftVector> target) const
   SmartPtr<DenseVector> bot_vu = dynamic_cast<DenseVector*>(target->top()->s()->MakeNew());
   v_B_e = dynamic_cast<DenseVector*>(target->s()->MakeNewCopy());
   bot_s = expand(v_B_e,shift_d_indices_,bot_vu->Dim());
-  bot_vu->Set(mu_target);
+  bot_vu->Set(mu);
   bot_vu->ElementWiseDivide(*Sl_s_U_);
   bot_s->ElementWiseMultiply(*v_U_DIV_Sl_);
   v_B_e = dynamic_cast<DenseVector*>(target->top()->s()->MakeNew());
@@ -3874,6 +4153,18 @@ void LinearizeKKT::convertBackToUnsymmetric(SmartPtr<ShiftVector> target) const
   // printf("\n");
   // target->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"cBTU");
 }
+
+Number LinearizeKKT::getMuFromOptions(SmartPtr<OptionsList> options) const
+{
+  Number retval = 0;
+
+  if(options->GetNumericValue("mu_target",retval,"")) {
+    return retval;
+  } else
+    printf("\nLinearizeKKT::getMuFromOptions: no mu_target. Returning 0");
+  return retval;
+}
+
 
 void LinearizeKKT::testGMRES()
 {
@@ -4291,4 +4582,493 @@ void LinearizeKKT::testMINRES()
   minres << "\n\n#end of file";
   minres.close();
 
+}
+
+SmartPtr<ShiftVector> LinearizeKKT::testSVMINRES(SmartPtr<ShiftVector>b,SmartPtr<ShiftVector>x0,const Number& tol, const Index& n_max, const Index& n_rest) const
+{
+  SmartPtr<DenseVector> ltx = dynamic_cast<DenseVector*>(b->x()->MakeNew());
+  SmartPtr<ShiftVector> lhs = new ShiftVector(*b);
+  SmartPtr<ShiftVector> rhs;
+  SmartPtr<DenseVector> rtx;
+
+  lhs->Set(0.0);
+  printf("\n ltx->Dim() is: %d",ltx->Dim());
+  Number* lvals = new Number[ltx->Dim()];
+  Number* rvals = new Number[ltx->Dim()];
+  Number cval;
+  /*
+ printf("\nbot_x part\n");
+ for (int i=0;i<ltx->Dim();i++) {
+ // for (int i=0;i<50;i++) {
+   for (int j=0;j<ltx->Dim();j++) {
+   //   for (int j=0;j<50;j++) {
+      for (int k=0;k<ltx->Dim();k++) {
+      	lvals[k] = 0.0;
+      }
+      lvals[i] = 1.0;
+      ltx->SetValues(lvals);
+      lhs->Set_x(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      // rhs = testKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->x()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals = rtx->Values();
+      cval = rvals[j];
+
+      lvals[i] = 0.0;
+      lvals[j] = 1.0;
+
+      ltx->SetValues(lvals);
+      lhs->Set_x(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      //      rhs = testKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->x()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals = rtx->Values();
+      cval -= rvals[i];
+
+    }
+    printf("\ncvals_x[%d] = %e   THE ZEROO",i,cval);
+  }
+ ///////////////////////////////-----------------------
+
+ */
+
+ ltx = dynamic_cast<DenseVector*>(b->top()->x()->MakeNew());
+  lhs = new ShiftVector(*b);
+
+  lhs->Set(0.0);
+  printf("\n ltx->Dim() is: %d",ltx->Dim());
+ Number* lvals2 = new Number[ltx->Dim()];
+ Number* rvals2 = new Number[ltx->Dim()];
+
+ printf("\ntop_x part\n");
+ for (int i=0;i<ltx->Dim();i++) {
+   for (int j=0;j<ltx->Dim();j++) {
+      for (int k=0;k<ltx->Dim();k++) {
+	lvals2[k] = 0.0;
+      }
+      lvals2[i] = 1.0;
+      ltx->SetValues(lvals2);
+      lhs->Set_x_top(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      //rhs = testKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->top()->x()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals2 = rtx->Values();
+      cval = rvals2[j];
+
+      lvals2[i] = 0.0;
+      lvals2[j] = 1.0;
+
+      ltx->SetValues(lvals2);
+      lhs->Set_x_top(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      // rhs = testKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->top()->x()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals2 = rtx->Values();
+      cval -= rvals2[i];
+    }
+    printf("\ncvals_x_top[%d] = %e   THE ZEROO",i,cval);
+  }
+
+
+ ltx = dynamic_cast<DenseVector*>(b->y_c()->MakeNew());
+ lhs = new ShiftVector(*b);
+
+ lhs->Set(0.0);
+ printf("\n ltx->Dim() is: %d",ltx->Dim());
+
+ Number* lvals0 = new Number[ltx->Dim()];
+ Number* rvals0 = new Number[ltx->Dim()];
+
+ printf("\nbot_yc part\n");
+ for (int i=0;i<ltx->Dim();i++) {
+   for (int j=0;j<ltx->Dim();j++) {
+     for (int k=0;k<ltx->Dim();k++) {
+	//	printf("\n k = %d   ltx->Dim() = %d",k,ltx->Dim());
+	lvals0[k] = 0.0;
+      }
+      lvals0[i] = 1.0;
+      ltx->SetValues(lvals0);
+      lhs->Set_y_c(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->y_c()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals0 = rtx->Values();
+      cval = rvals0[j];
+
+      lvals0[i] = 0.0;
+      lvals0[j] = 1.0;
+
+      ltx->SetValues(lvals0);
+      lhs->Set_y_c(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->y_c()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals0 = rtx->Values();
+      cval -= rvals0[i];
+    }
+    printf("\ncvals_yc[%d] = %e   THE ZEROO",i,cval);
+  }
+
+ ///////////////////////////////-----------------------
+ ltx = dynamic_cast<DenseVector*>(b->top()->y_c()->MakeNew());
+ lhs = new ShiftVector(*b);
+
+ lhs->Set(0.0);
+ printf("\n ltx->Dim() is: %d",ltx->Dim());
+ Number* lvals1 = new Number[ltx->Dim()];
+ Number* rvals1 = new Number[ltx->Dim()];
+
+ printf("\ntop_yc part\n");
+ for (int i=0;i<ltx->Dim();i++) {
+   for (int j=0;j<ltx->Dim();j++) {
+      for (int k=0;k<ltx->Dim();k++) {
+ 	lvals1[k] = 0.0;
+      }
+      lvals1[i] = 1.0;
+      ltx->SetValues(lvals1);
+      lhs->Set_y_c_top(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->top()->y_c()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals1 = rtx->Values();
+      cval = rvals1[j];
+
+      lvals1[i] = 0.0;
+      lvals1[j] = 1.0;
+
+      ltx->SetValues(lvals1);
+      lhs->Set_y_c_top(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->top()->y_c()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals1 = rtx->Values();
+      cval -= rvals1[i];
+    }
+    printf("\ncvals_yc_top[%d] = %e   THE ZEROO",i,cval);
+  }
+
+
+ /////////////-----------/////end of x/yc part////////////////--------///////////////
+
+
+ ////////start of yd/s part///////////////////////-----------------------
+
+  ltx = dynamic_cast<DenseVector*>(b->s()->MakeNew());
+  lhs = new ShiftVector(*b);
+
+  lhs->Set(0.0);
+  printf("\n ltx->Dim() is: %d",ltx->Dim());
+ Number* lvals3 = new Number[ltx->Dim()];
+ Number* rvals3 = new Number[ltx->Dim()];
+
+ printf("\nbot_s part\n");
+ for (int i=0;i<ltx->Dim();i++) {
+   for (int j=0;j<ltx->Dim();j++) {
+      for (int k=0;k<ltx->Dim();k++) {
+	lvals3[k] = 0.0;
+      }
+      lvals3[i] = 1.0;
+      ltx->SetValues(lvals3);
+      lhs->Set_s(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->s()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals3 = rtx->Values();
+      cval = rvals3[j];
+
+      lvals3[i] = 0.0;
+      lvals3[j] = 1.0;
+
+      ltx->SetValues(lvals3);
+      lhs->Set_s(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->s()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals3 = rtx->Values();
+      cval -= rvals3[i];
+    }
+    printf("\ncvals3_s[%d] = %e   THE ZEROO",i,cval);
+  }
+
+ ///////////////////////////////-----------------------
+
+  ltx = dynamic_cast<DenseVector*>(b->y_d()->MakeNew());
+  lhs = new ShiftVector(*b);
+
+  lhs->Set(0.0);
+  printf("\n ltx->Dim() is: %d",ltx->Dim());
+ Number* lvals4 = new Number[ltx->Dim()];
+ Number* rvals4 = new Number[ltx->Dim()];
+
+ printf("\nbot_yd part\n");
+ for (int i=0;i<ltx->Dim();i++) {
+   for (int j=0;j<ltx->Dim();j++) {
+      for (int k=0;k<ltx->Dim();k++) {
+	lvals4[k] = 0.0;
+      }
+      lvals4[i] = 1.0;
+      ltx->SetValues(lvals4);
+      lhs->Set_y_d(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->y_d()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals4 = rtx->Values();
+      cval = rvals4[j];
+
+      lvals4[i] = 0.0;
+      lvals4[j] = 1.0;
+
+      ltx->SetValues(lvals4);
+      lhs->Set_y_d(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->y_d()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals4 = rtx->Values();
+      cval -= rvals4[i];
+    }
+    printf("\ncvals4_yd[%d] = %e   THE ZEROO",i,cval);
+  }
+
+ ///////////////////////////////-----------------------
+
+ ltx = dynamic_cast<DenseVector*>(b->top()->s()->MakeNew());
+  lhs = new ShiftVector(*b);
+
+  lhs->Set(0.0);
+  printf("\n ltx->Dim() is: %d",ltx->Dim());
+ Number* lvals5 = new Number[ltx->Dim()];
+ Number* rvals5 = new Number[ltx->Dim()];
+
+ printf("\ntop_s part\n");
+ for (int i=0;i<ltx->Dim();i++) {
+   for (int j=0;j<ltx->Dim();j++) {
+      for (int k=0;k<ltx->Dim();k++) {
+	lvals5[k] = 0.0;
+      }
+      lvals5[i] = 1.0;
+      ltx->SetValues(lvals5);
+      lhs->Set_s_top(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->top()->s()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals5 = rtx->Values();
+      cval = rvals5[j];
+
+      lvals5[i] = 0.0;
+      lvals5[j] = 1.0;
+
+      ltx->SetValues(lvals5);
+      lhs->Set_s_top(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->top()->s()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals5 = rtx->Values();
+      cval -= rvals5[i];
+    }
+    printf("\ncvals5_s_top[%d] = %e   THE ZEROO",i,cval);
+  }
+
+ ///////////////////////////////-----------------------
+
+  ltx = dynamic_cast<DenseVector*>(b->top()->y_d()->MakeNew());
+  lhs = new ShiftVector(*b);
+
+  lhs->Set(0.0);
+  printf("\n ltx->Dim() is: %d",ltx->Dim());
+ Number* lvals6 = new Number[ltx->Dim()];
+ Number* rvals6 = new Number[ltx->Dim()];
+
+ printf("\ntop_yd part\n");
+ for (int i=0;i<ltx->Dim();i++) {
+   for (int j=0;j<ltx->Dim();j++) {
+      for (int k=0;k<ltx->Dim();k++) {
+	lvals6[k] = 0.0;
+      }
+      lvals6[i] = 1.0;
+      ltx->SetValues(lvals6);
+      lhs->Set_y_d_top(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->top()->y_d()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals6 = rtx->Values();
+      cval = rvals6[j];
+
+      lvals6[i] = 0.0;
+      lvals6[j] = 1.0;
+
+      ltx->SetValues(lvals6);
+      lhs->Set_y_d_top(*ltx);
+      rhs = computeKSymMultVector(lhs);
+      rtx = dynamic_cast<DenseVector*>(rhs->top()->y_d()->MakeNewCopy());
+      assert(!rtx->IsHomogeneous());
+      rvals6 = rtx->Values();
+      cval -= rvals6[i];
+    }
+    printf("\ncvals_yd_top[%d] = %e   THE ZEROO",i,cval);
+  }
+
+ ///////end of s/yd test ////////////////////////-----------------------
+
+  assert(0);
+  /*
+  //// ORIGINAL MINRES IMPLEMENTATION WITH testKSym ///////
+  std::vector<SmartPtr<ShiftVector> > r(2);
+  std::vector<SmartPtr<ShiftVector> > s(3);
+  std::vector<SmartPtr<ShiftVector> > p(3);
+  Number alpha;
+  std::vector<Number> beta(2);
+  std::vector<SmartPtr<ShiftVector> > x(2);
+  Index j_thresh = 1;
+  SmartPtr<ShiftVector> retval;
+
+  x[1] = new ShiftVector(*x0);
+  r[1] = testKSymMultVector(x[1]);
+  r[1]->AddOneVector(1.0,*b,-1.0);
+  if (r[1]->Nrm2()<tol)
+    return x0;
+  p[0] = new ShiftVector(*r[1]);
+  p[1] = new ShiftVector(*p[0]);
+  s[0] = testKSymMultVector(p[0]);
+  s[1] = new ShiftVector(*s[0]);
+  // printf("\n");
+  // s[0]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"s[0]");
+
+  std::string fname = "minres.dat";
+  std::ofstream minres;
+  char buffer[63];
+  minres.open(fname.c_str());
+  minres << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
+
+  for (int i=1;i<n_max;i++) {
+    // recursive value shift
+    p[2] = new ShiftVector(*p[1]);
+    p[1] = new ShiftVector(*p[0]);
+    s[2] = new ShiftVector(*s[1]);
+    s[1] = new ShiftVector(*s[0]);
+    r[0] = new ShiftVector(*r[1]);
+    x[0] = new ShiftVector(*x[1]);
+
+    if (s[1] ->Dot(* s[1]) == 0) {
+    printf("\nLinearizeKKT:computeMINRES(): Assertion due to 's' being a douche: Nrm2 = %e  or %f",s[1]->Nrm2(),s[1]->Nrm2());
+      s[1]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"s_assert");
+    }
+    assert(s[1] ->Dot(* s[1]));
+    assert(1/(s[1] ->Dot(* s[1])));
+    printf("\nMINRES: %d.er Lauf, s[1] ->Dot(* s[1]) = %e",i,s[1] ->Dot(* s[1]));
+    if (s[2] ->Dot(* s[2]) == 0) {
+    printf("\nLinearizeKKT:computeMINRES(): Assertion due to 's' being a douche: Nrm2 = %e  or %f",s[2]->Nrm2(),s[2]->Nrm2());
+      s[2]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"s_assert");
+    }
+    assert(s[2] ->Dot(* s[2]));
+    assert(1/(s[2] ->Dot(* s[2])));
+
+    // calculate steplength
+    alpha = (r[0] ->Dot(* s[1])) / (s[1] ->Dot(* s[1]));
+    if (!alpha) {
+      printf("\ncomputeMINRES(): steplength is 0. Aborting.");
+      x[1]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"x_assert");
+    } else
+      printf("\ncomputeMINRES(): steplength is %e.",alpha);
+    assert(alpha);
+    assert(1/alpha);
+    // update solution
+    x[1] = new ShiftVector(*x[0]);
+    x[1]->AddOneVector(alpha,*p[1],1.0);
+
+    // output current residual
+    SmartPtr<ShiftVector> tmp = testKSymMultVector(x[1]);
+    tmp->AddOneVector(-1.0,*b,1.0);
+    sprintf(buffer,"\nresidual[%d] = %e     (relative: %e)",i,tmp->Nrm2(), tmp->Nrm2()/b->Nrm2());
+    minres << buffer;
+
+    //update residual
+    r[1] = new ShiftVector(*r[0]);
+    r[1]->AddOneVector(-1.0*alpha,*s[1],1.0);
+
+    if (r[1]->Nrm2()<tol) {
+      // target accuracy achieved - compute and return solution
+      printf("\n target accuracy achieved. r[1]->Nrm2() is: %e, which is less than tol: %e\n",r[1]->Nrm2(),tol);
+      x[1]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"x_sol");
+
+      retval = new ShiftVector(*x[1]);
+      return retval;
+
+    } else {
+      // solution needs to improve - update next stepdirection
+      p[0] = new ShiftVector(*s[1]);
+
+      // update s
+      s[0] = testKSymMultVector(s[1]);
+
+      if (i>=2)
+	j_thresh=2;
+
+      // modify updated  p and s
+    assert(s[2] ->Dot(* s[2]));
+    assert(1 / (s[2] ->Dot(* s[2]) ));
+      for (int j=0;j<j_thresh;j++) {
+	beta[j] = s[j+1] ->Dot(* s[0] ) / s[j+1] ->Dot(* s[j+1]);
+	p[0]->AddOneVector(-1.0*beta[j],*p[j+1],1.0);
+	s[0]->AddOneVector(-1.0*beta[j],*s[j+1],1.0);
+      }
+    }
+  }
+
+  minres << "\n\n#end of file";
+  minres.close();
+
+  return new ShiftVector(*x[1]);
+  */
+  return new ShiftVector(*b);
+}
+
+SmartPtr<ShiftVector> LinearizeKKT::testKSymMultVector(SmartPtr<ShiftVector> target) const
+{
+  SmartPtr<ShiftVector> retval = new ShiftVector(*target);
+
+  SmartPtr<DenseVector> rv_x = dynamic_cast<DenseVector*>(target->top()->x()->MakeNewCopy());
+  SmartPtr<DenseVector> rv_s = dynamic_cast<DenseVector*>(target->top()->s()->MakeNewCopy());
+  SmartPtr<DenseVector> rv_yc = dynamic_cast<DenseVector*>(target->top()->y_c()->MakeNewCopy());
+  SmartPtr<DenseVector> rv_yd = dynamic_cast<DenseVector*>(target->top()->y_d()->MakeNewCopy());
+
+  rv_x->Scal(2.0);
+  rv_s->Scal(-1.2);
+  rv_yc->Scal(3.8);
+  rv_yd->Scal(-2.7);
+
+  retval->Set_x_top(*rv_x);
+  retval->Set_s_top(*rv_s);
+  retval->Set_y_c_top(*rv_yc);
+  retval->Set_y_d_top(*rv_yd);
+
+  SmartPtr<DenseVector> rv_bot_x = dynamic_cast<DenseVector*>(target->x()->MakeNewCopy());
+  SmartPtr<DenseVector> rv_bot_s =  dynamic_cast<DenseVector*>(target->s()->MakeNewCopy());
+  SmartPtr<DenseVector> rv_bot_yc = dynamic_cast<DenseVector*>(target->y_c()->MakeNewCopy());
+  SmartPtr<DenseVector> rv_bot_yd = dynamic_cast<DenseVector*>(target->y_d()->MakeNewCopy());
+
+  rv_bot_x ->Scal(-6);
+  rv_bot_s ->Scal(10.2);
+  rv_bot_yc->Scal(1.2);
+  rv_bot_yd->Scal(-0.7);
+
+  SmartPtr< DenseVector> rv_b_x = shrink(rv_x,shift_x_indices_);
+  SmartPtr< DenseVector> rv_b_s = shrink(rv_s,shift_d_indices_);
+  SmartPtr<DenseVector> rv_b_yc = shrink(rv_yc,shift_c_indices_);
+  SmartPtr<DenseVector> rv_b_yd = shrink(rv_yd,shift_d_indices_);
+
+  // rv_bot_x->AddOneVector(1.0,*rv_b_x,1.0);
+  // rv_bot_s->AddOneVector(1.0,*rv_b_s,1.0);
+  // rv_bot_yc->AddOneVector(1.0,*rv_b_yc,1.0);
+  // rv_bot_yd->AddOneVector(1.0,*rv_b_yd,1.0);
+
+  retval->Set_x(*rv_bot_x);
+  retval->Set_s(*rv_bot_s);
+  retval->Set_y_c(*rv_bot_yc);
+  retval->Set_y_d(*rv_bot_yd);
+
+  return new ShiftVector(*retval);
 }
