@@ -77,7 +77,7 @@ public:
   IntervalInfoSet();
   IntervalInfoSet(const std::vector<IntervalInfo>& intinfovec);
   IntervalInfoSet(SmartPtr<const DenseVector> parameters);
-  //  ~IntervalInfoSet();
+  ~IntervalInfoSet();
   void setIntInfoSet(const std::vector<IntervalInfo> &intinfovec);
   std::vector<IntervalInfo> getIntInfoSet() const;
   std::vector<Index> getIndexVec() const;
@@ -109,12 +109,12 @@ private:
   std::vector<Index> parameterIDvec_;
   std::vector<Index> intervalIDvec_;
   std::vector<bool> is_uppervec_;
-
 };
 
 class IntervalWidthScaling
 {
 public:
+  virtual ~IntervalWidthScaling(){};
   virtual std::vector<Number> scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID) const = 0;
 };
 IntervalWidthScaling* assignScalingMethod(SmartPtr<OptionsList> options);
@@ -122,30 +122,35 @@ IntervalWidthScaling* assignScalingMethod(SmartPtr<OptionsList> options);
 class NoScaling : public IntervalWidthScaling
 {
 public:
+  ~NoScaling();
   virtual std::vector<Number> scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID)const;
 };
 
 class TotIntWidthScaling : public IntervalWidthScaling
 {
 public:
+  ~TotIntWidthScaling();
   virtual std::vector<Number> scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID)const;
 };
 
 class IntWidthScaling : public IntervalWidthScaling
 {
 public:
+  ~IntWidthScaling();
   virtual std::vector<Number> scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID)const;
 };
 
 class ReverseIntWidthScaling : public IntervalWidthScaling
 {
 public:
+  ~ReverseIntWidthScaling();
   virtual std::vector<Number> scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID)const;
 };
 
 class RevTotIntWidthScaling : public IntervalWidthScaling
 {
 public:
+  ~RevTotIntWidthScaling();
   virtual std::vector<Number> scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID)const;
 };
 
@@ -209,7 +214,7 @@ public:
 							   const IntervalInfoSet& intervals,
 							   const std::vector<Index>& indices,
 							   const bool& force_obi=0) const;
-  virtual SplitChoice branchInterval(const std::vector<SplitChoice>& splitchoices) const;
+  SplitChoice branchInterval(const std::vector<SplitChoice>& splitchoices) const;
 };
 
 class LargerBranching : public BranchingCriterion
@@ -267,13 +272,13 @@ Intervaluation* assignIntervaluationMethod(SmartPtr<OptionsList> options);
 class OneBoundIntervaluation : public Intervaluation
 {
 public:
-  SplitChoice intervaluateInterval(const Index& controlrow, const Index& intervalID,SmartPtr<MultiVectorMatrix> mv_sens,SmartPtr<OptionsList> options, const IntervalInfoSet& intervals) const;
+  virtual SplitChoice intervaluateInterval(const Index& controlrow, const Index& intervalID,SmartPtr<MultiVectorMatrix> mv_sens,SmartPtr<OptionsList> options, const IntervalInfoSet& intervals) const;
 };
 
 class BothBoundIntervaluation : public Intervaluation
 {
 public:
-  SplitChoice intervaluateInterval(const Index& controlrow, const Index& intervalID,SmartPtr<MultiVectorMatrix> mv_sens,SmartPtr<OptionsList> options, const IntervalInfoSet& intervals) const;
+  virtual SplitChoice intervaluateInterval(const Index& controlrow, const Index& intervalID,SmartPtr<MultiVectorMatrix> mv_sens,SmartPtr<OptionsList> options, const IntervalInfoSet& intervals) const;
 };
 
 class ControlSelector
@@ -286,7 +291,7 @@ class SelectIndexControl : public ControlSelector
 {
 public:
   SelectIndexControl(const Index& index);
-  SplitDecision decideSplitControl(const std::vector<SplitChoice>& choices) const;
+  virtual SplitDecision decideSplitControl(const std::vector<SplitChoice>& choices) const;
 private:
   Index index_;
 };
@@ -296,12 +301,15 @@ ControlSelector* assignControlMethod(SmartPtr<IpoptApplication> app);
 class SplitAlgorithm
 {
 public:
+  virtual ~SplitAlgorithm(){ std::cout << "ALLES DOOOF";};
   virtual SplitDecision applySplitAlgorithm(SmartPtr<IpoptApplication> app) = 0;
 };
 
 class SplitWRTControlSensitivities : public SplitAlgorithm
 {
-  SplitDecision applySplitAlgorithm(SmartPtr<IpoptApplication> app);
+public:
+  virtual SplitDecision applySplitAlgorithm(SmartPtr<IpoptApplication> app);
+  ~SplitWRTControlSensitivities();
 };
 
 /* forward declaration*/
@@ -310,8 +318,9 @@ class LinearizeKKT : public SplitAlgorithm
 {
 public:
   LinearizeKKT(SmartPtr<IpoptApplication> app);
+  ~LinearizeKKT(){};
   /* structural parts*/
-  SplitDecision applySplitAlgorithm(SmartPtr<IpoptApplication> app);
+  virtual SplitDecision applySplitAlgorithm(SmartPtr<IpoptApplication> app);
   SmartPtr<DenseVector> applyGMRESOnInterval(SmartPtr<IpoptApplication> app,const Index& interval, const Index& parameter);
 
   /*handling and manipulating data specifically*/
@@ -369,9 +378,7 @@ public:
   void testGMRES();
 
 private:
-  //  SmartPtr<ShiftSolver> solver_;
   //original Ipopt data
-
   SmartPtr<const DenseVector> x_;
   SmartPtr<const DenseVector> s_;
   SmartPtr<const DenseVector> y_c_;
@@ -445,12 +452,9 @@ private:
 
 class SplitIntAtBound : public SplitAlgorithm
 {
-  SplitDecision applySplitAlgorithm(SmartPtr<IpoptApplication> app);
+  ~SplitIntAtBound();
+  virtual SplitDecision applySplitAlgorithm(SmartPtr<IpoptApplication> app);
 };
-
-
-/*forward declaration*/
-//class ShiftVectorSpace;
 
 class ShiftVector : public ReferencedObject
 {
@@ -595,9 +599,9 @@ IntervalInfo::IntervalInfo(const Number& value, const Index& parameterID, const 
   is_upper_ = is_upper;
 
 }
-/*
-IntervalInfo:: ~IntervalInfo() {}
 
+IntervalInfo::~IntervalInfo() {}
+/*
 void IntervalInfo::setParameters(const std::vector<std::string>& pnames, const std::vector<Number>& pvalues)
 {  }
 */
@@ -725,12 +729,9 @@ IntervalInfoSet::IntervalInfoSet(SmartPtr<const DenseVector> parameters)
   delete tmp_par;
   delete tmp_ID;
 }
-/*
-IntervalInfoSet::~IntervalInfoSet()
-{
-  std::cout << "blaaa" << std::endl;
-}
-*/
+
+IntervalInfoSet::~IntervalInfoSet(){}
+
 void IntervalInfoSet::setIntInfoSet(const std::vector<IntervalInfo> &intinfovec)
 {
   intinfovec_=intinfovec;
@@ -1500,14 +1501,6 @@ Index ShiftVector::Dim() const
 
 void ShiftVector::Set(const Number& alpha)
 {
-  // dynamic_cast<DenseVector*>(GetRawPtr(top_->x_NonConst()))->Set(alpha);
-  // dynamic_cast<DenseVector*>(GetRawPtr(top_->s_NonConst()))->Set(alpha);
-  // dynamic_cast<DenseVector*>(GetRawPtr(top_->y_c_NonConst()))->Set(alpha);
-  // dynamic_cast<DenseVector*>(GetRawPtr(top_->y_d_NonConst()))->Set(alpha);
-  // dynamic_cast<DenseVector*>(GetRawPtr(top_->z_L_NonConst()))->Set(alpha);
-  // dynamic_cast<DenseVector*>(GetRawPtr(top_->z_U_NonConst()))->Set(alpha);
-  // dynamic_cast<DenseVector*>(GetRawPtr(top_->v_L_NonConst()))->Set(alpha);
-  // dynamic_cast<DenseVector*>(GetRawPtr(top_->v_U_NonConst()))->Set(alpha);
   top_->Set(alpha);
   x_->Set(alpha);
   s_->Set(alpha);
@@ -1737,6 +1730,10 @@ IntervalWidthScaling* assignScalingMethod(SmartPtr<OptionsList> options)
   return new NoScaling();
 }
 
+NoScaling::~NoScaling()
+{
+  std::cout << "NoScaling Destructor called." << std::endl;
+}
 
 std::vector<Number> NoScaling::scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID) const
 {
@@ -1746,6 +1743,11 @@ std::vector<Number> NoScaling::scaleIntervalWidths(const IntervalInfoSet& interv
   for (int i=0;i<npars;i++)
     retval[i]=1;
   return retval;
+}
+
+TotIntWidthScaling::~TotIntWidthScaling()
+{
+ std::cout << "TIWS Destructor called." << std::endl;
 }
 
 std::vector<Number> TotIntWidthScaling::scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID) const
@@ -1801,6 +1803,11 @@ std::vector<Number> TotIntWidthScaling::scaleIntervalWidths(const IntervalInfoSe
   return retval;
 }
 
+RevTotIntWidthScaling::~RevTotIntWidthScaling()
+{
+  std::cout << "RevTotIntWidthScaling Destructor called." << std::endl;
+}
+
 std::vector<Number> RevTotIntWidthScaling::scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID) const
 {
   Index npars = intervals.getParameterCount();
@@ -1853,6 +1860,11 @@ std::vector<Number> RevTotIntWidthScaling::scaleIntervalWidths(const IntervalInf
     retval[i] = total_int_widths[i] / retval[i];
   }
   return retval;
+}
+
+IntWidthScaling::~IntWidthScaling()
+{
+  std::cout << "IntWidthScaling Destructor called.";
 }
 
 std::vector<Number> IntWidthScaling::scaleIntervalWidths(const IntervalInfoSet& intervals,const Index& intervalID) const
@@ -1910,6 +1922,11 @@ std::vector<Number> ReverseIntWidthScaling::scaleIntervalWidths(const IntervalIn
   }
 
   return retval;
+}
+
+ReverseIntWidthScaling::~ReverseIntWidthScaling()
+{
+  std::cout << "RevereseIntWidthScaling Destructor called." << std::endl;
 }
 
 BranchingCriterion* assignBranchingMethod(SmartPtr<OptionsList> options)
@@ -2264,15 +2281,21 @@ ControlSelector* assignControlMethod(SmartPtr<IpoptApplication> app)
 	bool ctrl_name_found_in_idx_names = false;
 	assert (ctrl_name_found_in_idx_names);
       }
+      delete retval;
       retval =  new SelectIndexControl(index);
     }
   } else if (options->GetIntegerValue("ctrl_index",index,"")) {
-
+    delete retval;
     retval =  new SelectIndexControl(index);
   } else {
     printf("\nassignControlMethod(); The options don't assign a control for selection!\n");
   }
   return retval;
+}
+
+SplitWRTControlSensitivities::~SplitWRTControlSensitivities()
+{
+  std::cout << "SWRTCS Destructor called." << std::endl;
 }
 
 SplitDecision SplitWRTControlSensitivities::applySplitAlgorithm(SmartPtr<IpoptApplication> app)
@@ -2302,21 +2325,26 @@ SplitAlgorithm* assignSplitAlgorithm(SmartPtr<IpoptApplication> app)
   SplitAlgorithm* retval = new LinearizeKKT(app);
   if (options->GetStringValue("sensemode",sensemode,"")) {
     if (sensemode == "control") {
+      delete retval;
       retval = new SplitWRTControlSensitivities();
     } if (sensemode == "GMRES" || sensemode == "MINRES") {
-      retval = new LinearizeKKT(app);
+      // do nothing: retval is initialized to LinearizeKKT  by default
     }
   } else
     printf("\nassignSplitAlgorithm(): ERROR: No splitAlgorithm chosen!");
   return retval;
 }
-
+/*
+LinearizeKKT::~LinearizeKKT()
+{
+  std::cout << "LinKKT - Destructor called." <<std::endl;
+}
+*/
 LinearizeKKT::LinearizeKKT(SmartPtr<IpoptApplication> app)
 {
   x_intervalIDs_.clear();
   c_intervalIDs_.clear();
   d_intervalIDs_.clear();
-
 
   SmartPtr<IpoptNLP> ipopt_nlp = app->IpoptNLPObject();
   SmartPtr<OrigIpoptNLP> orig_nlp = dynamic_cast<OrigIpoptNLP*>(GetRawPtr(ipopt_nlp));
@@ -4747,6 +4775,11 @@ bool doIntervalization(SmartPtr<IpoptApplication> app)
   delete splitter;
 
   return 1;
+}
+
+SplitIntAtBound::~SplitIntAtBound()
+{
+  std::cout << "SIAB - Destructor called!" << std::endl;
 }
 
 SplitDecision SplitIntAtBound::applySplitAlgorithm(SmartPtr<IpoptApplication> app)
