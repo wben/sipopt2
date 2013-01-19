@@ -587,6 +587,15 @@ namespace Ipopt
       "If selected, the algorithm will print the list of all available "
       "algorithmic options with some documentation before solving the "
       "optimization problem.");
+    roptions->AddStringOption2(
+      "do_intervallization",
+      "Switch to do intervallization based on options.",
+      "yes",
+      "no", "don't do intervallization",
+      "yes", "do intervallization",
+      "If selected, the algorithm will read the options given "
+      "and output scenario split data in a file \"branch_intervals.dat\" "
+      ".");
     roptions->AddStringOption4(
       "branchmode",
       "Criterion used for determination of to be branched interval.",
@@ -599,13 +608,15 @@ namespace Ipopt
       "checking the attribute determined by the branchmode setting. The "
       "values compared can be either interval bound values, scalar "
       "product style benefit values or any other Number type value.");
-    roptions->AddStringOption3(
+    roptions->AddStringOption5(
       "scalingmode",
       "Chose whether and/or how to scale branch criterion values.",
       "none",
       "none", "disable scaling",
       "total_interval_widths", "scale interval values with respect to relative interval width",
-      "interval_widths", "scale interval values with respect to single actual interval width"
+      "interval_widths", "scale interval values with respect to single actual interval width",
+      "reverse_interval_widths", "multiply interval values with single actual interval width - used for control sense splitting",
+      "reverse_total_widths", "multiply interval values with single actual interval width divided by total parameter ranges - used for control sense splitting",
       "Chose whether and/or how to scale branch criterion values.");
     roptions->AddStringOption2(
       "branchvalue",
@@ -666,7 +677,7 @@ namespace Ipopt
       "gmr_n_rst",
       "Number of outer iterations in GMRES algorithm without reset of matrix A.",
       0,
-      "Code won't read this argument as restart is not implemented yet. ");
+      "If GMRES is used to solve the parametershift, the loop will be reset after gmr_n_rst iterations. ");
 
 #if COIN_IPOPT_VERBOSITY > 0
 
