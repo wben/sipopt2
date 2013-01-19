@@ -282,7 +282,7 @@ ControlSelector* assignControlMethod(SmartPtr<IpoptApplication> app);
 class SplitAlgorithm
 {
 public:
-  virtual ~SplitAlgorithm(){ std::cout << "ALLES DOOOF";};
+  virtual ~SplitAlgorithm(){};
   virtual SplitDecision applySplitAlgorithm(SmartPtr<IpoptApplication> app) = 0;
 };
 
@@ -1593,6 +1593,7 @@ SplitChoice RandomBranching::branchInterval(const std::vector<SplitChoice>& spli
 
 std::vector<SplitChoice> LargerBranching::branchSensitivityMatrix(SmartPtr<MultiVectorMatrix> mv_sens,SmartPtr<OptionsList> options, const IntervalInfoSet& intervals, const std::vector<Index>& indices,const bool& force_obi) const
 {
+  // std::cout << std::endl << "YOOO IM BRANCHING DAT MATRIX BRO!";
   std::vector<SplitChoice> retval;
   std::vector<Index> intervalIDs = intervals.getIntervalIDs();
   // cycle through controls and intervals to setup intervaluation for each control at each interval
@@ -1607,10 +1608,15 @@ std::vector<SplitChoice> LargerBranching::branchSensitivityMatrix(SmartPtr<Multi
   for (unsigned int i=0;i<indices.size();i++) {
     //with only one control and only one interval, the only decision left is which parameter to split. thats done by intervaluation
     retval.push_back(intervaluater->intervaluateInterval(indices[i],intervalIDs[0],mv_sens,options,intervals));
+    // std::cout << std::endl << "YOOO I BRANCHED DAT FIRST MATRIX ENTRY BRO!";
     if (intervalIDs.size()>1) {
       //with more than one interval, the branching algorithm is to pick the critical interval and return its data
       for (unsigned int j=1;j<intervalIDs.size();j++) {
+	// std::cout << std::endl << "YOOO I BRANCHED DAT "<< j <<"TH MATRIX ENTRY BRO!";
 	tmp_split_choice = intervaluater->intervaluateInterval(indices[i],intervalIDs[j],mv_sens,options,intervals);
+	//    std::cout << std::endl << "YOOO dat reason_value: " << tmp_split_choice.reason_value;
+    // std::cout << std::endl << "YOOO dat intervalID: " << tmp_split_choice.intervalID;
+    // std::cout << std::endl << "YOOO dat parameter: " << tmp_split_choice.parameterID<< std::endl;
 	if (tmp_split_choice.reason_value>retval[i].reason_value)
 	  retval[i] = tmp_split_choice;
       }
@@ -1759,7 +1765,10 @@ Intervaluation* assignIntervaluationMethod(SmartPtr<OptionsList> options)
 {
   std::string branchvalue;
   if (options->GetStringValue("branchvalue",branchvalue ,"")){
-    printf("\nbranchvalue is %s",branchvalue.c_str());
+    if (branchvalue =="bound")
+      std::cout<<"      return new OneBoundIntervaluation()";
+    else if (branchvalue=="product")
+      std::cout<<"      return new BothBoundIntervaluation()";
     if (branchvalue =="bound")
       return new OneBoundIntervaluation();
     else if (branchvalue=="product")
@@ -1796,22 +1805,31 @@ SplitChoice OneBoundIntervaluation::intervaluateInterval(const Index& controlrow
 	if (!dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(j)))->IsHomogeneous()) {
 	  const Number* sensitivity_value_1 = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(j)))->Values();
 	  int_splitchoices[2*i].reason_value = *(sensitivity_value_1+controlrow)*intervalwidths[i];
+	  std::cout << std::endl << "reason value: " << *(sensitivity_value_1+controlrow)*intervalwidths[i];
 	} else {
 	  const Number sensitivity_value_1 = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(j)))->Scalar();
 	  int_splitchoices[2*i].reason_value = sensitivity_value_1*intervalwidths[i];
+	  std::cout << std::endl << "reason value: " << sensitivity_value_1*intervalwidths[i];
 	}
 	if (!dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(tmp_idx)))->IsHomogeneous()) {
 	  const Number* sensitivity_value_2 = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(tmp_idx)))->Values();
 	  int_splitchoices[2*i+1].reason_value = *(sensitivity_value_2+controlrow)*intervalwidths[i];
+	  std::cout << std::endl << "reason value: " << *(sensitivity_value_2+controlrow)*intervalwidths[i];
 	} else {
 	  const Number sensitivity_value_2 = dynamic_cast<const DenseVector*>(GetRawPtr(mv_sens->GetVector(tmp_idx)))->Scalar();
 	  int_splitchoices[2*i+1].reason_value = sensitivity_value_2*intervalwidths[i];
+	  std::cout << std::endl << "reason value: " << sensitivity_value_2*intervalwidths[i];
 	}
 	j=intervals.size();
       }
     }
   }
   //let intbrancher decide, which parameter is critical on this interval
+  for (unsigned int i = 0; i< int_splitchoices.size();i++) {
+    std::cout << std::endl << "YOLLOO dat reason_value: " << int_splitchoices[i].reason_value;
+    std::cout << std::endl << "YOLLOO dat intervalID: " << int_splitchoices[i].intervalID;
+    std::cout << std::endl << "YOLLOO dat parameter: " << int_splitchoices[i].parameterID<< std::endl;
+  }
   retval = int_brancher->branchInterval(int_splitchoices);
   delete int_brancher;
   delete scalingmode;
@@ -1828,7 +1846,8 @@ SplitChoice BothBoundIntervaluation::intervaluateInterval(const Index& controlro
   std::vector<Index> ID_vec = intervals.getIntervalIDVec();
   std::vector<Index> para_vec = intervals.getParameterIDVec();
   Index npars = intervals.getParameterCount();
-  std::vector<SplitChoice> int_splitchoices(2*npars);
+  //  std::vector<SplitChoice> int_splitchoices(2*npars);
+  std::vector<SplitChoice> int_splitchoices(npars);
   std::vector<Index> parameterIDs = intervals.getParameterIDs();
   Number tmp_value;
   Index tmp_idx;
@@ -1859,6 +1878,12 @@ SplitChoice BothBoundIntervaluation::intervaluateInterval(const Index& controlro
     }
   }
   //let intbrancher decide, which parameter is critical on this interval
+  for (unsigned int i = 0; i<int_splitchoices.size();i++) {
+     std::cout << std::endl << "YOLOO dat reason_value: " << int_splitchoices[i].reason_value;
+     std::cout << std::endl << "YOLOO dat intervalID: " << int_splitchoices[i].intervalID;
+     std::cout << std::endl << "YOLOO dat parameter: " << int_splitchoices[i].parameterID<< std::endl;
+  }
+
   retval = int_brancher->branchInterval(int_splitchoices);
   delete int_brancher;
   delete scalingmode;
@@ -1922,15 +1947,33 @@ SplitDecision SplitWRTControlSensitivities::applySplitAlgorithm(SmartPtr<IpoptAp
   SmartPtr<OptionsList> options = app->Options();
   BranchingCriterion* branchmode = assignBranchingMethod(options);
   SmartPtr<MultiVectorMatrix> mv_sens = dynamic_cast<MultiVectorMatrix*>(GetRawPtr(getSensitivityMatrix(app)));
+  mv_sens->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "dxdp");
+  if (dynamic_cast<const DenseVectorSpace*>(GetRawPtr(mv_sens->ColVectorSpace()))->HasIntegerMetaData("intervalID")) {
+    const std::vector<int> iIDs = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(mv_sens->ColVectorSpace()))->GetIntegerMetaData("intervalID");
+  assert(dynamic_cast<const DenseVectorSpace*>(GetRawPtr(mv_sens->ColVectorSpace()))->HasStringMetaData("idx_names"));
+    const std::vector<std::basic_string<char> > names = dynamic_cast<const DenseVectorSpace*>(GetRawPtr(mv_sens->ColVectorSpace()))->GetStringMetaData("idx_names");
+      for (int i=0;i<mv_sens->NRows();i++)
+	std::cout << std::endl << names[i] << " -- intervalID[" <<i<<"]: " << iIDs[i];
+    }
+
+
   SmartPtr<IpoptNLP> ipopt_nlp = app->IpoptNLPObject();
   SmartPtr<OrigIpoptNLP> orig_nlp = dynamic_cast<OrigIpoptNLP*>(GetRawPtr(ipopt_nlp));
   SmartPtr<const DenseVector> p = dynamic_cast<const DenseVector*>(GetRawPtr(orig_nlp->p()));
   IntervalInfoSet intervals = IntervalInfoSet(p);
   std::vector<SplitChoice> splitchoices = branchmode->branchSensitivityMatrix(mv_sens,options,intervals);
+  // for (unsigned int i=0; i<splitchoices.size();i++) {
+  //   std::cout << std::endl << "YOHHOO dat reason_value: " << splitchoices[i].reason_value;
+  //   std::cout << std::endl << "YOHHOO dat intervalID: " << splitchoices[i].intervalID;
+  //   std::cout << std::endl << "YOHHOO dat parameter: " << splitchoices[i].parameterID<< std::endl;
+  // }
+
   ControlSelector* pickfirst = assignControlMethod(app);
   SplitDecision retval = pickfirst->decideSplitControl(splitchoices);
   delete branchmode;
   delete pickfirst;
+  // std::cout << std::endl << "YOHHHOO dat intervalID: " << retval.intervalID;
+  // std::cout << std::endl << "YOHHHOO dat parameter: " << retval.parameterID;
   return retval;
 }
 
@@ -2658,27 +2701,24 @@ bool LinearizeKKT::splitIntervalIndices(const std::vector<Index>& intervalIDs,st
 void LinearizeKKT::assignGMRESOptions(SmartPtr<OptionsList> options,Number& tol, Index& n_max, Index& n_rest) const
 {
   if (options->GetNumericValue("gmr_tol",tol,"")) {
-    // printf("\nLinearizeKKT::assignGMRESOptions(): gmr_tol set to: %e",tol);
   } else {
-    //    printf("\nLinearizeKKT::assignGMRESOptions(): gmr_tol set to default value");
     tol = 1.0e-5;
   }
   if (options->GetIntegerValue("gmr_n_max",n_max,"")) {
-    //    printf("\nLinearizeKKT::assignGMRESOptions(): n_max set to: %d",n_max);
   } else {
-    //    printf("\nLinearizeKKT::assignGMRESOptions(): n_max set to default value");
     n_max = 20;
   }
 
   // restart not implemented yet
 
- /*  if (options->GetIntegerValue("gmr_n_rst",n_rest,"")) {
+   if (options->GetIntegerValue("gmr_n_rst",n_rest,"")) {
     printf("\nLinearizeKKT::assignGMRESOptions(): n_rest set to: %d",n_rest);
   } else {
     printf("\nLinearizeKKT::assignGMRESOptions(): n_rest set to default value");
     n_rest = 0;
-    } */
+    }
 }
+
 void testaddKPIMV(const Number& a ,SmartPtr<ShiftVector> lhs,const Number& b, SmartPtr<ShiftVector> rhs);
 
 void LinearizeKKT::computeGMRES(SmartPtr<ShiftVector>lhs, SmartPtr<ShiftVector>rhs, SmartPtr<ShiftVector>x0, const Number& tol, const Index& n_max, const Index& n_rest) const
@@ -2718,138 +2758,151 @@ void LinearizeKKT::computeGMRES(SmartPtr<ShiftVector>lhs, SmartPtr<ShiftVector>r
   assert(gamma[0]);
   v[0]->Scal(1/gamma[0]);
 
-  // outer loop
-  for (Index j=0; j<n_max;j++) {
+  Index tmp_max;
+  Index tmp_rest;
+  if (n_rest) {
+    tmp_max = int(n_max/n_rest);
+    tmp_rest = n_rest;
+  } else {
+    tmp_max = 1;
+    tmp_rest = n_max;
+  }
 
-    w[j] = new ShiftVector(*x0);
-    addKPIMultVector(1.0,v[j],0.0,w[j]);
-    //    testaddKPIMV(1.0,v[j],0.0,w[j]);
+  for (Index l = 0; l<tmp_max;l++) {
 
-    // update h[i,j] entries
-    for (Index i=0; i<=j;i++) {
-      h[i+j*n_max] = v[i]->Dot(*w[j]);
-    }
+    // outer loop
+    for (Index j=0; j<tmp_rest;j++) {
 
-    // calculate w[j]
-    for (Index i=0;i<=j;i++) {
-      w[j]->AddOneVector(-1.0*h[i+j*n_max],*v[i],1.0);
-    }
-    // rotate it
-    for (Index i=0;i<j;i++) {
-      double hij = h[i+j*n_max];
-      double hij1 = h[i+1+j*n_max];
-      h[i+j*n_max] = c[i+1]*hij + s[i+1]*hij1;
-      h[i+1+j*n_max] = -s[i+1]*hij + c[i+1]*hij1;
-    }
-    // expand h, first step
-    h[j+1+j*n_max] = w[j]->Nrm2();
+      w[j] = new ShiftVector(*x0);
+      addKPIMultVector(1.0,v[j],0.0,w[j]);
+      //    testaddKPIMV(1.0,v[j],0.0,w[j]);
 
-    // expand h, second step
-    beta = sqrt(h[j+j*n_max]*h[j+j*n_max]+h[j+1+j*n_max]*h[j+1+j*n_max]);
-    s[j+1] = h[j+1+j*n_max]/beta;
-    c[j+1] = h[j+j*n_max]/beta;
-    h[j+j*n_max] = beta;
+      // update h[i,j] entries
+      for (Index i=0; i<=j;i++) {
+	h[i+j*n_max] = v[i]->Dot(*w[j]);
+      }
 
-    // expand and update gammas
-    gamma[j+1] = -s[j+1]*gamma[j];
-    gamma[j] = c[j+1]*gamma[j];
-    g_cnt++;
+      // calculate w[j]
+      for (Index i=0;i<=j;i++) {
+	w[j]->AddOneVector(-1.0*h[i+j*n_max],*v[i],1.0);
+      }
+      // rotate it
+      for (Index i=0;i<j;i++) {
+	double hij = h[i+j*n_max];
+	double hij1 = h[i+1+j*n_max];
+	h[i+j*n_max] = c[i+1]*hij + s[i+1]*hij1;
+	h[i+1+j*n_max] = -s[i+1]*hij + c[i+1]*hij1;
+      }
+      // expand h, first step
+      h[j+1+j*n_max] = w[j]->Nrm2();
 
-    // check quality of current solution
-    if ( (fabs(gamma[j+1]) > tol) && ( !n_max || (n_max && (j!=n_max-1)) ) ) {
-      // insufficient - update v[j+1]
-      assert(h[j+1+j*n_max]);
-      v[j+1] = new ShiftVector(*w[j]);
-      // v[j+1] = w[j];
-      v[j+1]->Scal(1/h[j+1+j*n_max]);
+      // expand h, second step
+      beta = sqrt(h[j+j*n_max]*h[j+j*n_max]+h[j+1+j*n_max]*h[j+1+j*n_max]);
+      s[j+1] = h[j+1+j*n_max]/beta;
+      c[j+1] = h[j+j*n_max]/beta;
+      h[j+j*n_max] = beta;
 
-      // target accuracy or maximum number of iterations achieved - calculate solution
-    } else {
-      // set up multipliers y[i]
-      for (Index i=j;i>=0;i--) { // check this!
+      // expand and update gammas
+      gamma[j+1] = -s[j+1]*gamma[j];
+      gamma[j] = c[j+1]*gamma[j];
+      g_cnt++;
+
+      // check quality of current solution
+      if ( (fabs(gamma[j+1]) > tol) && ( !n_max || (n_max && (j!=n_max-1)) ) ) {
+	// insufficient - update v[j+1]
+	assert(h[j+1+j*n_max]);
+	v[j+1] = new ShiftVector(*w[j]);
+	// v[j+1] = w[j];
+	v[j+1]->Scal(1/h[j+1+j*n_max]);
+
+	// target accuracy or maximum number of iterations achieved - calculate solution
+      } else {
+	// set up multipliers y[i]
+	for (Index i=j;i>=0;i--) { // check this!
+	  assert(h[i+i*n_max]);
+
+	  // set up sum[k] h[i+k*n_max] y[k]
+	  beta = 0;
+	  for (Index k=i+1;k<=j;k++) {
+	    beta += h[i+k*n_max]*y[k];
+	  }
+	  y[i]= (1/h[i+i*n_max])*(gamma[i]-beta);
+	}
+
+	// compute solution
+	// lhs = new ShiftVector(*x0);
+	lhs->Set(*x0);
+	for (Index i=0; i<=j;i++) {
+
+	  // printf("\ny[%d] is: %e",i,y[i]);
+	  lhs->AddOneVector(y[i],*v[i],1.0);
+
+	}
+	//      lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"lhs2");
+	break;
+      }
+
+      /* set up current solution to calculate absolute residuum and write it to file
+	 in order to check for convergence */
+      /*
+	for (Index i=j;i>=0;i--) {
 	assert(h[i+i*n_max]);
-
-	// set up sum[k] h[i+k*n_max] y[k]
 	beta = 0;
 	for (Index k=i+1;k<=j;k++) {
-	  beta += h[i+k*n_max]*y[k];
-	}
-	y[i]= (1/h[i+i*n_max])*(gamma[i]-beta);
-      }
-
-      // compute solution
-      // lhs = new ShiftVector(*x0);
-      lhs->Set(*x0);
-      for (Index i=0; i<=j;i++) {
-
-	// printf("\ny[%d] is: %e",i,y[i]);
-	lhs->AddOneVector(y[i],*v[i],1.0);
-
-      }
-      //      lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"lhs2");
-      break;
-    }
-
-    /* set up current solution to calculate absolute residuum and write it to file
-       in order to check for convergence */
-/*
-    for (Index i=j;i>=0;i--) {
-      assert(h[i+i*n_max]);
-      beta = 0;
-      for (Index k=i+1;k<=j;k++) {
     	beta += h[i+k*n_max]*y[k];
-      }
-      y[i]= 1/h[i+i*n_max]*(gamma[i]-beta);
+	}
+	y[i]= 1/h[i+i*n_max]*(gamma[i]-beta);
+	}
+
+	lhs = new ShiftVector(*x0);
+	//    lhs->Set(*x0);
+
+	for (Index i=0; i<=j;i++) {
+	//   lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"lhs7");
+	//   v[i]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"v[i]");
+	//   printf("\n----------------------zu lhs wird schon wieder v[%d] addiert----------------------",i);
+	//   printf("\nschleifeninformationen: i ist: %d und muss zwischen 0 und j (%d) liegen.",i,j);
+	//   printf("\ny[%d] is: %e",i,y[i]);
+	//     lhs->AddTwoVectors(y[i],*v[i],0.0,*v[i],1.0);
+	lhs->AddOneVector(y[i],*v[i],1.0);
+	}
+	// lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"lhs3");
+	SmartPtr<ShiftVector> fooo = new ShiftVector(*rhs);
+	addKPIMultVector(1.0,lhs,-1.0,fooo);
+	// testaddKPIMV(1.0,lhs,-1.0,fooo);
+	//     lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"lhs4");
+	Number residual = fooo->Nrm2();
+
+	//write residual into residuals.dat file for python access
+	sprintf(buffer,"\nresidual[%d] = %e,      (relative: %e)",j,residual, residual/rhs->Nrm2());
+	residuals << buffer;
+	lhs = new ShiftVector(*x0);
+	// lhs->Set(*x0);
+	//     lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"lhs5");
+	//    lhs = x0;
+	*/
     }
-
-  lhs = new ShiftVector(*x0);
-  //    lhs->Set(*x0);
-
-    for (Index i=0; i<=j;i++) {
-    //   lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"lhs7");
-    //   v[i]->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"v[i]");
-    //   printf("\n----------------------zu lhs wird schon wieder v[%d] addiert----------------------",i);
-    //   printf("\nschleifeninformationen: i ist: %d und muss zwischen 0 und j (%d) liegen.",i,j);
-    //   printf("\ny[%d] is: %e",i,y[i]);
-      //     lhs->AddTwoVectors(y[i],*v[i],0.0,*v[i],1.0);
-      lhs->AddOneVector(y[i],*v[i],1.0);
+    /*
+      residuals << "\n\n#end of file";
+      residuals.close();
+    */
+    //write gamma[j] into gamma.dat file for python access
+    std::string fname = "gammas.dat";
+    std::ofstream gammas;
+    gammas.open(fname.c_str());
+    gammas << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
+    char buffer[63];
+    for (int i=0;i<g_cnt;i++) {
+      sprintf(buffer,"\ngamma[%d] = %e",i,gamma[i]);
+      gammas << buffer;
     }
-    // lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"lhs3");
-    SmartPtr<ShiftVector> fooo = new ShiftVector(*rhs);
-    addKPIMultVector(1.0,lhs,-1.0,fooo);
-    // testaddKPIMV(1.0,lhs,-1.0,fooo);
-//     lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"lhs4");
-    Number residual = fooo->Nrm2();
-
-    //write residual into residuals.dat file for python access
-    sprintf(buffer,"\nresidual[%d] = %e,      (relative: %e)",j,residual, residual/rhs->Nrm2());
-    residuals << buffer;
-    lhs = new ShiftVector(*x0);
-    // lhs->Set(*x0);
-//     lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"lhs5");
-    //    lhs = x0;
-  */
+    gammas << "\n\n#end of file";
+    gammas.close();
+    // lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"lhs8");
+    printf("\nnumber of GMRES iterations: %d",g_cnt);
+    if (g_cnt == n_max)
+      std::cout << std::endl << "ampl_ipopt.cpp -- GMRES: Maximum number of iterations performed. Algorithm only was able to reduce residuum to " << fabs(gamma[g_cnt-1]) << ". Consider raising gmr_n_max.";
   }
-/*
-  residuals << "\n\n#end of file";
-  residuals.close();
-*/
-  //write gamma[j] into gamma.dat file for python access
-  std::string fname = "gammas.dat";
-  std::ofstream gammas;
-  gammas.open(fname.c_str());
-  gammas << "#.dat file automatically generated by AMPL intervallization routine\n#Ben Waldecker Sep 2012\n";
-  char buffer[63];
-  for (int i=0;i<g_cnt;i++) {
-    sprintf(buffer,"\ngamma[%d] = %e",i,gamma[i]);
-    gammas << buffer;
-  }
-  gammas << "\n\n#end of file";
-  gammas.close();
-  // lhs->Print(*jnl_, J_INSUPPRESSIBLE, J_DBG,"lhs8");
-  printf("\nnumber of GMRES iterations: %d",g_cnt);
-  if (g_cnt == n_max)
-    std::cout << std::endl << "ampl_ipopt.cpp -- GMRES: Maximum number of iterations performed. Algorithm only was able to reduce residuum to " << fabs(gamma[g_cnt-1]) << ". Consider raising gmr_n_max.";
 }
 
 void LinearizeKKT::computeweirdRES(SmartPtr<ShiftVector>lhs, SmartPtr<ShiftVector>rhs, SmartPtr<ShiftVector>x0, const Number& tol, const Index& n_max, const Index& n_rest) const
@@ -3813,8 +3866,11 @@ int main(int argc, char**args)
     delta_s->Print(*app->Jnlst(), J_INSUPPRESSIBLE, J_DBG, "delta_s");
     }
 */
-  doIntervalization(app);
-
+  std::string do_int;
+  if (app->Options()->GetStringValue("do_intervallization",do_int,"")){
+    if (do_int == "yes")
+      doIntervalization(app);
+  }
   return 0;
 }
 
